@@ -1,6 +1,9 @@
 import * as THREE from 'three/webgpu';
-import { pass, uniform } from 'three/tsl';
+import { pass, uniform, vec2, vec4, float, smoothstep, screenUV } from 'three/tsl';
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
+import { film } from 'three/addons/tsl/display/FilmNode.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Butterfly, REST_HEIGHT } from './butterfly.js';
@@ -97,12 +100,18 @@ function captureEnvironment(pos) {
   scene.environment = envTarget.texture;
 }
 
-// ---------- post: shallow macro depth of field ----------
+// ---------- post: shallow macro depth of field, and the lens ----------
 
 const pipeline = new THREE.RenderPipeline(renderer);
 const scenePass = pass(scene, camera, { samples: 4 });
 const focus = uniform(camera.position.length());
-pipeline.outputNode = dof(scenePass.getTextureNode(), scenePass.getViewZNode(), focus, uniform(0.03), uniform(2));
+const sharp = dof(scenePass.getTextureNode(), scenePass.getViewZNode(), focus, uniform(0.03), uniform(2));
+// What a real lens and sensor add, so the frame reads as photographed: glow around the bright lines
+// and highlights, a little colour fringing toward the corners, darker corners, and fine grain.
+const glowing = sharp.add(bloom(sharp, 0.2, 0.3, 1.1)); // threshold above the lit wings, so only highlights and lines glow
+const fringed = chromaticAberration(glowing, 0.2, vec2(0.5, 0.5), 1.0);
+const vignette = smoothstep(0.35, 0.95, screenUV.sub(0.5).length().mul(1.4)).mul(0.45).oneMinus();
+pipeline.outputNode = film(vec4(fringed.rgb.mul(vignette), 1), float(0.12));
 
 // ---------- butterfly behaviour ----------
 
