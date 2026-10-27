@@ -18,7 +18,10 @@ function anchorsOf(bf) {
   const list = [];
   bf.pivots.forEach((p) => {
     const mesh = p.children[0], pts = bf.wings[p.userData.hind ? 1 : 0].pts;
-    for (let k = 0; k < 4; k++) list.push({ obj: mesh, local: new THREE.Vector3(pts[Math.floor((k + 0.5) / 4 * pts.length)].x, pts[Math.floor((k + 0.5) / 4 * pts.length)].y, 0) });
+    for (let k = 0; k < 4; k++) {
+      const q = pts[Math.floor((k + 0.5) / 4 * pts.length)];
+      list.push({ obj: mesh, local: new THREE.Vector3(q.x, q.y, 0) });
+    }
     list.push({ obj: mesh, local: new THREE.Vector3(pts[0].x * 0.5, pts[0].y * 0.5, 0) }); // mid-wing
   });
   list.push({ obj: bf.antennae[0], local: new THREE.Vector3() }); // head

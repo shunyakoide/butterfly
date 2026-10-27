@@ -3,10 +3,10 @@ import { heat } from './fx.js';
 
 // The butterfly redrawn: a green dot-matrix dither, a blue halftone of big dots, black pixel marks
 // on white (a dot, a cross or a square per cell, by darkness), liquid chrome, a flickering hologram,
-// contour lines or a thermal camera. Only the butterfly's pixels change
-// (a mask written by its materials in the scene pass); the print styles read the frame in square
-// cells at their centres, so their silhouette turns blocky. Separately, on take-off the butterfly
-// breaks into blocks that stream off sideways and thin out.
+// contour lines or a thermal camera. Only the butterfly's pixels change (a mask written by its
+// materials in the scene pass); the print styles read the frame in square cells at their centres, so
+// their silhouette turns blocky. Separately, on take-off the butterfly breaks into blocks that stream
+// off sideways and thin out.
 
 export const STYLES = ['dots', 'halftone', 'pixels', 'chrome', 'holo', 'topo', 'thermal'];
 const CELL = { dots: [3, 3], halftone: [9, 9], pixels: [6, 6] }; // CSS px; the rest work per pixel
@@ -21,6 +21,7 @@ export function buildDigital({ colour, smooth, mask }) {
     const P = screenUV.mul(screenSize); // physical px
     const cellPx = vec2(...(CELL[style] ?? [1, 1])).mul(dpr);
     const cell = P.div(cellPx).floor(), local = P.div(cellPx).fract();
+    const dither = hash(cell.x.add(cell.y.mul(4096))); // a random threshold per cell
     const uv = cell.add(0.5).mul(cellPx).div(screenSize);
     const on = step(0.5, mask.sample(uv).r);
     const c = colour.sample(uv).rgb;
@@ -30,7 +31,7 @@ export function buildDigital({ colour, smooth, mask }) {
     let out;
     if (style === 'dots') {
       // A square dot per cell, lit when brighter than a random threshold (a stochastic dither).
-      const lit = step(hash(cell.x.add(cell.y.mul(4096))), t);
+      const lit = step(dither, t);
       const square = step(0.15, local.x).mul(step(local.x, 0.85)).mul(step(0.15, local.y)).mul(step(local.y, 0.85));
       out = COLOUR.dots.mul(lit.mul(square)).mul(t.mul(0.6).add(0.4));
     } else if (style === 'halftone') {
@@ -40,7 +41,7 @@ export function buildDigital({ colour, smooth, mask }) {
       // On a 3×3 grid per cell (plus a gutter, so even the darkest stays a grid of squares): nothing,
       // a centre dot, a cross, or the whole square, by darkness with a random nudge so the steps
       // dither into each other.
-      const level = min(ink.mul(3).add(hash(cell.x.add(cell.y.mul(4096)))).floor(), 3);
+      const level = min(ink.mul(3).add(dither).floor(), 3);
       const sub = local.mul(4).floor(), mid = (a) => equal(a, 1).select(1, 0);
       const mark = mid(sub.x).mul(mid(sub.y)).mul(step(1, level))
         .max(mid(sub.x).max(mid(sub.y)).mul(step(2, level))).max(step(3, level)).mul(step(sub.x, 2)).mul(step(sub.y, 2));

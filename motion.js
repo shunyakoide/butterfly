@@ -8,10 +8,6 @@ const DUST = 240;         // scales alive at most
 const DUST_RATE = { flying: 50, rest: 6 }; // shed per second, from points on the wings
 
 export function buildMotion({ scene, camera, bf }) {
-  const group = new THREE.Group();
-  scene.add(group);
-  const flying = (mode) => mode === 'takeoff' || mode === 'landing';
-
   // They write depth, or the depth of field takes them for the wall behind and blurs them away; but
   // only where the star shows (the rest of the quad is discarded), or each would cut a square out of
   // the blur and of the butterfly's mask.
@@ -26,10 +22,10 @@ export function buildMotion({ scene, camera, bf }) {
   dust.frustumCulled = false;
   const black = new THREE.Color(0, 0, 0);
   for (let i = 0; i < DUST; i++) dust.setColorAt(i, black);
-  group.add(dust);
+  scene.add(dust);
   const motes = Array.from({ length: DUST }, () => ({ life: 0, age: 0, p: new THREE.Vector3(), v: new THREE.Vector3(), size: 0, seed: 0 }));
   let next = 0, owed = 0;
-  const v = new THREE.Vector3(), m = new THREE.Matrix4(), s = new THREE.Vector3(), c = new THREE.Color();
+  const m = new THREE.Matrix4(), s = new THREE.Vector3(), c = new THREE.Color();
   function shed() {
     const piv = bf.pivots[Math.floor(Math.random() * bf.pivots.length)];
     const pts = bf.wings[piv.userData.hind ? 1 : 0].pts, q = pts[Math.floor(Math.random() * pts.length)], f = 0.3 + 0.7 * Math.random();
@@ -47,10 +43,9 @@ export function buildMotion({ scene, camera, bf }) {
 
   function update(dt, mode) {
     bf.group.updateMatrixWorld();
-    const fly = flying(mode);
 
     if (bf.group.visible) {
-      owed += dt * (fly ? DUST_RATE.flying : DUST_RATE.rest);
+      owed += dt * (mode === 'takeoff' || mode === 'landing' ? DUST_RATE.flying : DUST_RATE.rest);
       for (; owed >= 1; owed--) shed();
     }
     for (let i = 0; i < DUST; i++) {

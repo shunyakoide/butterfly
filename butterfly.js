@@ -24,25 +24,24 @@ function canvasTexture(colorSpace) {
 export class Butterfly {
   constructor(pattern) {
     this.group = new THREE.Group();
-    this.pattern = pattern;
     // [fore, hind] for each of: upperside colour, upperside roughness, underside colour.
     this.upper = [0, 1].map(() => canvasTexture(THREE.SRGBColorSpace));
     this.rough = [0, 1].map(() => canvasTexture(THREE.NoColorSpace));
     this.under = [0, 1].map(() => canvasTexture(THREE.SRGBColorSpace));
     // [upper, under] relief per wing: veins read faintly through the dorsal scales, more below.
-    this.relief = [FORE, HIND].map((w) => [reliefNormalMap(w, 0.35), reliefNormalMap(w, 1)]);
+    const relief = [FORE, HIND].map((w) => [reliefNormalMap(w, 0.35), reliefNormalMap(w, 1)]);
 
     // Upper side: structural blue lobe (see morpho.js) over a low, white specular. Lit from behind,
     // the thin membrane passes the pigment colours: the underside's browns show through the upper
     // side, but the blue is reflected, not pigment, so the underside glows brown, not blue.
     this.upperMats = [0, 1].map((i) => new WingMaterial({
       structural: true, roughMap: this.rough[i], transMap: this.under[i], shadeMap: this.upper[i], transStrength: 0.3,
-      map: this.upper[i], alphaTest: 0.5, alphaToCoverage: true, normalMap: this.relief[i][0], side: THREE.FrontSide,
+      map: this.upper[i], alphaTest: 0.5, alphaToCoverage: true, normalMap: relief[i][0], side: THREE.FrontSide,
       roughness: 1, roughnessMap: this.rough[i], specularIntensity: 0.25,
     }));
     this.underMats = [0, 1].map((i) => new WingMaterial({
       transMap: this.under[i], shadeMap: this.upper[i], transStrength: 0.3,
-      map: this.under[i], alphaTest: 0.5, alphaToCoverage: true, normalMap: this.relief[i][1], side: THREE.BackSide,
+      map: this.under[i], alphaTest: 0.5, alphaToCoverage: true, normalMap: relief[i][1], side: THREE.BackSide,
       roughness: 0.7, sheen: 0.6, sheenRoughness: 0.5, sheenColor: 0xc8a878,
     }));
     const body = buildBody();
@@ -72,18 +71,15 @@ export class Butterfly {
       });
     }
     this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    this.paint();
-  }
 
-  paint() {
     const ctx = (t) => t.image.getContext('2d', { willReadFrequently: true });
     [true, false].forEach((isFore, i) => {
-      drawUpper(ctx(this.upper[i]), ctx(this.rough[i]), this.wings[i], this.pattern, isFore);
-      drawUnder(ctx(this.under[i]), this.wings[i], this.pattern, isFore);
+      drawUpper(ctx(this.upper[i]), ctx(this.rough[i]), this.wings[i], pattern, isFore);
+      drawUnder(ctx(this.under[i]), this.wings[i], pattern, isFore);
     });
     [...this.upper, ...this.rough, ...this.under].forEach((t) => (t.needsUpdate = true));
     // Map the painted hue (190–215) onto the interference peak (~510–490 nm; photos read cyan-blue).
-    for (const m of this.upperMats) m.lambda0.value = 510 - (this.pattern.hue - 190) * 0.8;
+    for (const m of this.upperMats) m.lambda0.value = 510 - (pattern.hue - 190) * 0.8;
   }
 
   // angle: 0 = wings flat, positive = raised toward closed above the back.

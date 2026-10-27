@@ -39,9 +39,8 @@ function begin(ctx, wing) {
   outline.closePath();
   ctx.save();
   ctx.clip(outline);
-  const outer = pts.filter((v) => v.length() > wing.length * 0.55);
   const blur = (m) => (ctx.filter = m ? `blur(${m * S}px)` : 'none');
-  return { S, pts, outline, outer, length: wing.length, ends: wing.ends, veins: wing.veins, blur };
+  return { S, pts, length: wing.length, ends: wing.ends, veins: wing.veins, blur };
 }
 
 // Veins from the anatomy, tapering toward the margin, with a soft dark halo of scales.

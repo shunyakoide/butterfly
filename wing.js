@@ -107,7 +107,7 @@ function build(spec) {
     const lobe = Math.exp(-((near / 0.0032) ** 2));
     return v.multiplyScalar(1 - spec.scallop * (1 - lobe) * (1 - smoothstep(near, 0.006, 0.012)));
   });
-  return { length: spec.length, pts, shape: new THREE.Shape(pts), veins, ends };
+  return { length: spec.length, pts, veins, ends };
 }
 
 export const FORE = build(FORE_SPEC);
