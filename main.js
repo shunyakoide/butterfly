@@ -1,10 +1,9 @@
 import * as THREE from 'three/webgpu';
-import { pass, uniform, vec2, vec4, float, int, smoothstep, screenUV, mrt, output, velocity } from 'three/tsl';
+import { pass, uniform, vec2, vec4, float, smoothstep, screenUV } from 'three/tsl';
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
 import { film } from 'three/addons/tsl/display/FilmNode.js';
-import { motionBlur } from 'three/addons/tsl/display/MotionBlur.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Butterfly, REST_HEIGHT } from './butterfly.js';
@@ -108,12 +107,7 @@ function captureEnvironment(pos) {
 const pipeline = new THREE.RenderPipeline(renderer);
 const scenePass = pass(scene, camera, { samples: 4 });
 const focus = uniform(camera.position.length());
-// Motion blur over a 1/250 s exposure (a usual shutter for butterflies): the beating wings smear at
-// their tips while the body stays sharp. Velocity is per frame, so it's scaled by shutter/frame time.
-scenePass.setMRT(mrt({ output, velocity }));
-const shutter = uniform(0);
-const moving = motionBlur(scenePass.getTextureNode(), scenePass.getTextureNode('velocity').mul(shutter), int(8));
-const sharp = dof(moving, scenePass.getViewZNode(), focus, uniform(0.03), uniform(2));
+const sharp = dof(scenePass.getTextureNode(), scenePass.getViewZNode(), focus, uniform(0.03), uniform(2));
 // What a real lens and sensor add, so the frame reads as photographed: glow around the bright lines
 // and highlights, a little colour fringing toward the corners, darker corners, and fine grain.
 const glowing = sharp.add(bloom(sharp, 0.2, 0.3, 1.1)); // threshold above the lit wings, so only highlights and lines glow
@@ -421,9 +415,7 @@ const timeScale = +(params.get('slow') ?? 1);
 let realRadius = 0;
 const envAt = { sun: new THREE.Vector3(), pos: new THREE.Vector3(0, 0, -1), radius: 0 };
 renderer.setAnimationLoop(() => {
-  const frame = clock.getDelta();
-  const dt = Math.min(frame, 1 / 30) * timeScale;
-  shutter.value = Math.min((1 / 250) / Math.max(frame, 1e-3), 1);
+  const dt = Math.min(clock.getDelta(), 1 / 30) * timeScale;
   if (state.mode === 'rest') idle(dt);
   else if (state.mode === 'away') {
     state.timer -= dt;

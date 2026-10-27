@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, vec4, exp, fract, sin, hash, mrt } from 'three/tsl';
+import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, sin, hash } from 'three/tsl';
 
 // Only the butterfly is real. It stands on a wall built of lines: square columns drawn as
 // outlines, their tops level into a platform under the butterfly and, further out, dropped to
@@ -54,10 +54,6 @@ export function buildRift() {
   // A faint ring sweeping out from the butterfly now and then.
   const ring = exp(d.sub(fract(time.mul(0.15)).mul(radius).mul(1.6)).div(0.004).pow(2).negate()).mul(0.8);
   lineMaterial.colorNode = mix(new THREE.Color(VOID), vec3(0.35, 0.75, 1).mul(ring.add(0.7)), top.mul(0.75).add(0.25).mul(fade).mul(exp(sink.mul(-8))));
-  // No motion blur for the wall and specks: the blur is the camera's exposure of the butterfly, and
-  // the motion here is set in the shader, which the velocity pass reads wrongly (it smeared the screen).
-  const still = mrt({ velocity: vec4(0) });
-  lineMaterial.mrtNode = still;
   const columns = columnsGeometry();
   const lines = new THREE.LineSegments(columns, lineMaterial);
   lines.frustumCulled = false;
@@ -76,7 +72,7 @@ export function buildRift() {
   const FAR = 50;
   const r = Math.random;
   const SPECKS = 3000;
-  const specks = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicNodeMaterial({ mrtNode: still }), SPECKS);
+  const specks = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicNodeMaterial(), SPECKS);
   specks.frustumCulled = false;
   const m = new THREE.Matrix4(), c = new THREE.Color();
   // Spread wider with depth, roughly filling what can be seen.
