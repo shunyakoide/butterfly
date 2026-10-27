@@ -57,7 +57,9 @@ const SWELL = 0.00045;
 const SWELL_TILT = 0.15;             // est.
 // The wing-level spread along the ridges (SIGMA_ALONG, ~61° FWHM) already includes all of the above,
 // so the band of a single patch of scale is narrower by their combined variance.
-const SCALE_VAR = (CURL * CURL) / 12 + JITTER * JITTER + (RIPPLE_TILT * RIPPLE_TILT + SWELL_TILT * SWELL_TILT) / 2;
+const TILE_VAR = (CURL * CURL) / 12 + JITTER * JITTER;
+const RIPPLE_VAR = (RIPPLE_TILT * RIPPLE_TILT) / 2, SWELL_VAR = (SWELL_TILT * SWELL_TILT) / 2;
+const SCALE_VAR = TILE_VAR + (RIPPLE_VAR + SWELL_VAR);
 const SIGMA_ALONG_1 = Math.sqrt(SIGMA_ALONG * SIGMA_ALONG - SCALE_VAR);
 // Four rotated-grid sub-samples per pixel; scales below pixel size widen the band instead of
 // aliasing (their scatter of tilts averages into a broader lobe).
@@ -140,9 +142,9 @@ class WingLightingModel extends THREE.PhysicalLightingModel {
     const hn = H.dot(Nl).max(1e-3), hn0 = H.dot(N).max(1e-3);
     const hT = H.dot(T).div(hn), hB = H.dot(B).div(hn), h0T = H.dot(T0).div(hn0), h0B = H.dot(B).div(hn0);
     // Scales too small to resolve: their spread of tilts widens the band rather than aliasing.
-    const blur = m.scaleVis.oneMinus().mul((CURL * CURL) / 12 + JITTER * JITTER)
-      .add(m.rippleVis.oneMinus().mul((RIPPLE_TILT * RIPPLE_TILT) / 2))
-      .add(m.swellVis.oneMinus().mul((SWELL_TILT * SWELL_TILT) / 2));
+    const blur = m.scaleVis.oneMinus().mul(TILE_VAR)
+      .add(m.rippleVis.oneMinus().mul(RIPPLE_VAR))
+      .add(m.swellVis.oneMinus().mul(SWELL_VAR));
     const sAlong = blur.add(SIGMA_ALONG_1 * SIGMA_ALONG_1).sqrt(), sAcross = blur.add(SIGMA_ACROSS * SIGMA_ACROSS).sqrt();
     const sLamina = blur.add(SIGMA_LAMINA * SIGMA_LAMINA);
     let lobe = float(0);
@@ -156,8 +158,9 @@ class WingLightingModel extends THREE.PhysicalLightingModel {
       lobe = lobe.add(band.add(spot).mul(j.z));
     }
     lobe = lobe.div(m.scaleSamples.length);
+    const cosLH = L.dot(H);
     reflectedLight.directSpecular.addAssign(
-      oblique(interference(L.dot(H), m.lambda0), L.dot(H)).mul(lobe)
+      oblique(interference(cosLH, m.lambda0), cosLH).mul(lobe)
         .mul(N.dot(L).clamp()).mul(lightColor).mul(m.blueMask).mul(m.lobeStrength));
   }
 
@@ -166,8 +169,9 @@ class WingLightingModel extends THREE.PhysicalLightingModel {
     const m = builder.material;
     if (!m.structural) return;
     const { radiance, reflectedLight } = builder.context;
+    const cosNV = normalView.dot(positionViewDirection).clamp();
     reflectedLight.indirectSpecular.addAssign(
-      radiance.mul(oblique(interference(normalView.dot(positionViewDirection).clamp(), m.lambda0), normalView.dot(positionViewDirection).clamp())).mul(m.blueMask).mul(m.envStrength).mul(m.scaleStrength));
+      radiance.mul(oblique(interference(cosNV, m.lambda0), cosNV)).mul(m.blueMask).mul(m.envStrength).mul(m.scaleStrength));
   }
 }
 
@@ -185,12 +189,13 @@ export class WingMaterial extends THREE.MeshPhysicalNodeMaterial {
     this.lambda0 = uniform(460);
     this.lobeStrength = uniform(1.3);
     this.envStrength = uniform(0.6);
+    // Wing coordinates (meters from the root).
+    const p = uv().mul(BOX.size).add(vec2(BOX.x0, BOX.y0));
     // Ridge direction: radial from the wing root, in the wing's tangent frame.
-    const d = uv().mul(BOX.size).add(vec2(BOX.x0, BOX.y0)).normalize();
+    const d = p.normalize();
     this.ridgeDir = tangentView.mul(d.x).add(bitangentView.mul(d.y)).normalize();
     // Scales: rows run across the wing (rings around the root, wavy and irregular as in macro
     // photos); within a row, scales sit side by side, offset half a scale from the next row.
-    const p = uv().mul(BOX.size).add(vec2(BOX.x0, BOX.y0));
     const dx = dFdx(p), dy = dFdy(p);
     const footprint = fwidth(p.x).add(fwidth(p.y)).max(1e-9);
     // 1 when a row spans a few pixels (close up), 0 when many rows share a pixel.

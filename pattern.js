@@ -24,6 +24,8 @@ export function morphoPattern(seed = Math.floor(Math.random() * 1e9)) {
 
 const hsl = (h, s, l, a = 1) => `hsla(${h},${s}%,${l}%,${a})`;
 const angleOf = (v) => Math.atan2(v.y, v.x);
+// Adds the points as one subpath to a canvas context or a Path2D.
+const trace = (c, pts) => pts.forEach((v, i) => (i ? c.lineTo(v.x, v.y) : c.moveTo(v.x, v.y)));
 
 // Sets up a canvas to draw in wing meters, clipped to the wing; returns the shared landmarks.
 function begin(ctx, wing) {
@@ -35,7 +37,7 @@ function begin(ctx, wing) {
   ctx.setTransform(S, 0, 0, -S, -BOX.x0 * S, TEX + BOX.y0 * S);
   const pts = wing.pts;
   const outline = new Path2D();
-  pts.forEach((v, i) => (i ? outline.lineTo(v.x, v.y) : outline.moveTo(v.x, v.y)));
+  trace(outline, pts);
   outline.closePath();
   ctx.save();
   ctx.clip(outline);
@@ -98,7 +100,7 @@ function wearMarks(p, wing, isFore) {
 }
 
 // Bare membrane: dull and grey-brown, with no blue (the roughness mask then drops the lobe too).
-function bare(ctx, L, marks, color) {
+function bare(ctx, marks, color) {
   for (const [v, rad] of marks.bare) {
     const g = ctx.createRadialGradient(v.x, v.y, 0, v.x, v.y, rad);
     g.addColorStop(0, color(0.8));
@@ -226,14 +228,14 @@ export function drawUpper(ctx, maskCtx, wing, p, isFore) {
     const costa = L.pts.filter((v) => v.y > 0.003 && v.x < 0.044);
     ctx.lineWidth = 0.0035;
     ctx.beginPath();
-    costa.forEach((v, i) => (i ? ctx.lineTo(v.x, v.y) : ctx.moveTo(v.x, v.y)));
+    trace(ctx, costa);
     ctx.stroke();
     ctx.beginPath();
     ctx.ellipse(0.045, 0.021, 0.006 + w, 0.004 + w * 0.6, 0.6, 0, Math.PI * 2);
     ctx.fill();
   }
   const band = new Path2D();
-  L.pts.forEach((v, i) => (i ? band.lineTo(v.x, v.y) : band.moveTo(v.x, v.y)));
+  trace(band, L.pts);
   band.closePath();
   const inner = L.pts.map((v) => {
     const a = angleOf(v), len = v.length();
@@ -242,7 +244,7 @@ export function drawUpper(ctx, maskCtx, wing, p, isFore) {
     const k = Math.max(0, (len - w * (0.8 + 0.5 * Math.min(1, nearest / 0.1))) / len);
     return v.clone().multiplyScalar(k);
   });
-  inner.reverse().forEach((v, i) => (i ? band.lineTo(v.x, v.y) : band.moveTo(v.x, v.y)));
+  trace(band, inner.reverse());
   band.closePath();
   L.blur(0.0012);
   ctx.fill(band, 'evenodd');
@@ -272,7 +274,7 @@ export function drawUpper(ctx, maskCtx, wing, p, isFore) {
 
   const marks = wearMarks(p, wing, isFore);
   L.blur(0.0004);
-  bare(ctx, L, marks, (a) => hsl(28, 10, 20, a));
+  bare(ctx, marks, (a) => hsl(28, 10, 20, a));
   L.blur(0);
   // In the photos the veins on the blue are fine and only a little darker than the blue.
   veins(ctx, L, (a) => hsl(p.hue + 10, 70, 14, a), 0.7, 0.7);
@@ -318,7 +320,6 @@ export function drawUnder(ctx, wing, p, isFore) {
     }
     ctx.stroke();
   };
-  L.blur(0.00015);
   // A pale tan median band, edged by cream and dark zigzags.
   L.blur(0.0015);
   zigzag(0.0145, 0.0004, hsl(h + 8, 35, 42, 0.55), 0.005);
@@ -342,7 +343,7 @@ export function drawUnder(ctx, wing, p, isFore) {
     ctx.strokeStyle = c;
     ctx.lineWidth = 0.0006;
     ctx.beginPath();
-    inset(d, 0.0004).forEach((v, i) => (i ? ctx.lineTo(v.x, v.y) : ctx.moveTo(v.x, v.y)));
+    trace(ctx, inset(d, 0.0004));
     ctx.stroke();
   }
   L.blur(0);
@@ -370,7 +371,7 @@ export function drawUnder(ctx, wing, p, isFore) {
 
   const marks = wearMarks(p, wing, isFore);
   L.blur(0.0004);
-  bare(ctx, L, marks, (a) => hsl(h + 6, 14, 36, a));
+  bare(ctx, marks, (a) => hsl(h + 6, 14, 36, a));
   L.blur(0);
   veins(ctx, L, (a) => hsl(h, 30, 12, a), 0.5);
   finish(ctx, L, null, marks);

@@ -10,8 +10,6 @@ const SCALE = 1.3;
 
 export const REST_HEIGHT = LEG_DROP * SCALE; // body centre above the wall when standing
 
-// ---------- butterfly ----------
-
 function canvasTexture(colorSpace) {
   const c = document.createElement('canvas');
   c.width = c.height = TEX;
