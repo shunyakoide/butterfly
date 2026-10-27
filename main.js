@@ -8,11 +8,13 @@ import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { Butterfly, REST_HEIGHT } from './butterfly.js';
 import { morphoPattern, mutatePattern } from './pattern.js';
 import { buildRift, VOID } from './rift.js';
+import { buildCircuit } from './circuit.js';
 
 // Units are meters. The wall is the z = 0 plane, facing +z.
 const HDRI = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/garden_nook_2k.hdr';
 const deg = THREE.MathUtils.degToRad;
 const hud = document.getElementById('hud');
+const params = new URLSearchParams(location.search);
 
 const renderer = new THREE.WebGPURenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -33,7 +35,18 @@ const cameraRest = camera.quaternion.clone(); // the view is fixed; only the han
 // ---------- wall: lines around the butterfly, and the space behind (rift.js) ----------
 
 const rift = buildRift(camera);
-scene.add(rift.wall, rift.space);
+const circuit = buildCircuit(camera);
+scene.add(rift.wall, rift.space, circuit.wall);
+// Two walls to choose from: the columns, or circuitry (?wall=circuit, or W to switch). The shadow and
+// the space behind are shared.
+let wallKind = params.get('wall') === 'circuit' ? 'circuit' : 'columns';
+function showWall() {
+  const isCircuit = wallKind === 'circuit';
+  rift.columns.visible = rift.envColumns.visible = !isCircuit;
+  circuit.wall.visible = circuit.envWall.visible = isCircuit;
+  rift.space.material.color.set(isCircuit ? 0xffb070 : 0xffffff); // warm specks among the amber
+}
+showWall();
 // Where the wall was: 1.6 m square, for picking points on it (most of it is no longer drawn).
 const wallPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 function onWall() {
@@ -93,7 +106,7 @@ scene.environmentIntensity = ENV;
 const pmrem = new THREE.PMREMGenerator(renderer);
 const envScene = new THREE.Scene();
 envScene.background = hdr;
-envScene.add(rift.envWall);
+envScene.add(rift.envWall, circuit.envWall);
 let envTarget = null;
 function captureEnvironment(pos) {
   const rot = sunAngles.az - hdrSunAz;
@@ -118,7 +131,6 @@ pipeline.outputNode = film(vec4(fringed.rgb.mul(vignette), 1), float(0.12));
 // ---------- butterfly behaviour ----------
 
 // ?wear=0..1 overrides the random wear, for checking old, worn individuals.
-const params = new URLSearchParams(location.search);
 const wearParam = params.get('wear');
 const bf = new Butterfly({ ...morphoPattern(), ...(wearParam && { wear: +wearParam }) });
 scene.add(bf.group);
@@ -381,13 +393,20 @@ addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = state.mode === 'rest' && hitsButterfly(e) ? 'pointer' : '';
 });
-hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽';
+hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽 ・ W で壁を切り替え';
+addEventListener('keydown', (e) => {
+  if (e.key !== 'w' && e.key !== 'W') return;
+  wallKind = wallKind === 'circuit' ? 'columns' : 'circuit';
+  showWall();
+  envAt.radius = -1; // re-capture the environment: the light from the wall has changed
+});
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
   rift.fit();
+  circuit.fit();
 });
 
 // ---------- loop ----------
@@ -423,6 +442,7 @@ renderer.setAnimationLoop(() => {
   const realTarget = bf.group.visible ? 0.12 * (1 - THREE.MathUtils.smoothstep(z, 0.03, 0.35)) : 0;
   realRadius = THREE.MathUtils.damp(realRadius, realTarget, 2, dt);
   rift.update(dt, bf.group.position.x, bf.group.position.y, realRadius);
+  circuit.update(bf.group.position.x, bf.group.position.y, realRadius);
   // Re-capture the environment when the sun turns, the wall has grown or shrunk, or the butterfly has
   // moved: 1 cm near the wall, more further out, where the wall's share of the view changes slowly.
   if (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.01 ||

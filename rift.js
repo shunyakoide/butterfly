@@ -116,7 +116,8 @@ export function buildRift(camera) {
   const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowNodeMaterial({ opacity: 0.7 }));
   shadowCatcher.receiveShadow = true;
   shadowCatcher.renderOrder = 1;
-  const wall = new THREE.Group().add(lines, faces, shadowCatcher);
+  const columns = new THREE.Group().add(lines, faces);
+  const wall = new THREE.Group().add(columns, shadowCatcher);
 
   // ---------- the space behind ----------
   // Nothing is drawn for it: the camera always faces the wall, so the scene background (set to VOID
@@ -156,7 +157,8 @@ export function buildRift(camera) {
   // but for the lines. Uniform, and only ever seen blurred, so the dark can be a plane.
   const envBehind = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshBasicNodeMaterial({ color: VOID }));
   envBehind.position.z = -0.05;
-  const envWall = new THREE.Group().add(envLines, envFaces, envBehind);
+  const envColumns = new THREE.Group().add(envLines, envFaces);
+  const envWall = new THREE.Group().add(envColumns, envBehind);
 
-  return { wall, space: specks, envWall, update, fit };
+  return { wall, columns, space: specks, envWall, envColumns, update, fit };
 }
