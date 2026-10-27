@@ -38,7 +38,7 @@ scene.add(rift.wall, rift.space);
 const wallPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 function onWall() {
   const p = ray.ray.intersectPlane(wallPlane, new THREE.Vector3());
-  return p && Math.abs(p.x) < 0.8 && Math.abs(p.y) < 0.8 ? p : null;
+  return p && Math.abs(p.x) < 0.4 && Math.abs(p.y) < 0.4 ? p : null;
 }
 
 // ---------- light ----------

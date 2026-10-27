@@ -10,8 +10,8 @@ import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp,
 // butterfly through its environment capture.
 
 export const VOID = 0x010103; // the colour of the space behind
-const SPAN = 1.2;   // m, extent of the wall (the butterfly lands within the view)
-const CELL = 0.008; // m, column pitch; each column is drawn 84% of it wide, so they read apart
+const SPAN = 1.0;   // m, extent of the wall (the butterfly lands within the middle of the view)
+const CELL = 0.005; // m, column pitch; each column is drawn 84% of it wide, so they read apart
 
 // Per column: the 4 edges of its top and its 4 corner posts. z is 0 at the top and -1 at the foot;
 // the shader places it.
