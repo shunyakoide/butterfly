@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { pass, uniform, vec2, vec4, float, smoothstep, screenUV } from 'three/tsl';
-import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js';
+import { pass, uniform, vec2, vec4, float, smoothstep, screenUV, mix } from 'three/tsl';
+import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
 import { film } from 'three/addons/tsl/display/FilmNode.js';
@@ -18,7 +18,10 @@ const deg = THREE.MathUtils.degToRad;
 const hud = document.getElementById('hud');
 const params = new URLSearchParams(location.search);
 
-const renderer = new THREE.WebGPURenderer({ antialias: true });
+// ?perf shows the frame rate and the GPU time per frame (timestamp queries), for tuning.
+const perf = params.has('perf');
+const perfAt = { frames: 0, captures: 0, since: performance.now() };
+const renderer = new THREE.WebGPURenderer({ antialias: true, trackTimestamp: perf });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.NeutralToneMapping;
@@ -114,6 +117,7 @@ envScene.background = hdr;
 envScene.add(rift.envWall, circuit.envWall, glass.envWall);
 let envTarget = null;
 function captureEnvironment(pos) {
+  perfAt.captures++;
   const rot = sunAngles.az - hdrSunAz;
   envScene.backgroundRotation.y = rot;
   envTarget = pmrem.fromScene(envScene, 0, 0.001, 40, { size: 128, position: pos, renderTarget: envTarget });
@@ -125,7 +129,17 @@ function captureEnvironment(pos) {
 const pipeline = new THREE.RenderPipeline(renderer);
 const scenePass = pass(scene, camera, { samples: 4 });
 const focus = uniform(camera.position.length());
-const sharp = dof(scenePass.getTextureNode(), scenePass.getViewZNode(), focus, uniform(0.03), uniform(4)); // bokeh 4: the deep wall reads as far behind
+// Depth of field, made cheap: the same circle of confusion as three's DOF (fully out of focus 3 cm
+// from the focal plane), but instead of its 64-tap bokeh, two blurred copies at half resolution
+// (light and stronger) mixed by it. The camera never moves and the focus stays on the
+// butterfly, so this is all the macro look needs, at a fraction of the cost (DOF was most of the GPU
+// time).
+const colour = scenePass.getTextureNode();
+const coc = smoothstep(0, 0.03, scenePass.getViewZNode().negate().sub(focus).abs());
+// Sized to match the old bokeh: a disc of ~8 px at bokeh 4, roughly a gaussian of 2 half-res texels.
+const soft = gaussianBlur(colour, null, 1, { resolutionScale: 0.5 });
+const blurred = gaussianBlur(colour, null, 2, { resolutionScale: 0.5 });
+const sharp = mix(colour, mix(soft, blurred, smoothstep(0.35, 1, coc)), smoothstep(0, 0.35, coc));
 // What a real lens and sensor add, so the frame reads as photographed: glow around the bright lines
 // and highlights, a little colour fringing toward the corners, darker corners, and fine grain.
 const glowing = sharp.add(bloom(sharp, 0.2, 0.3, 1.1)); // threshold above the lit wings, so only highlights and lines glow
@@ -499,4 +513,21 @@ renderer.setAnimationLoop(() => {
   focus.value = THREE.MathUtils.damp(focus.value, camera.position.distanceTo(bf.group.position), 6, dt);
   pipeline.render();
   overlay.update(clock.elapsedTime);
+  if (perf) showPerf();
 });
+
+// Every half second the GPU time of all the frames since (the timestamp queries pile up until
+// resolved) is shown per frame, with the frame rate. window.app lets the console switch parts off to
+// see what they cost.
+if (perf) window.app = { renderer, pipeline, scene, scenePass, rift, circuit, glass, overlay, bf, outputs: { sharp, glowing, fringed } };
+function showPerf() {
+  perfAt.frames++;
+  const now = performance.now();
+  if (now - perfAt.since < 500) return;
+  const frames = perfAt.frames, fps = frames * 1000 / (now - perfAt.since), captures = perfAt.captures;
+  renderer.resolveTimestampsAsync('render').then((ms) => {
+    window.perfStats = { fps, gpu: (ms ?? 0) / frames, captures };
+    hud.textContent = `${fps.toFixed(0)} fps · GPU ${window.perfStats.gpu.toFixed(2)} ms/frame`;
+  });
+  Object.assign(perfAt, { frames: 0, captures: 0, since: now });
+}
