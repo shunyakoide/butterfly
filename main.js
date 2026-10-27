@@ -1,15 +1,15 @@
 import * as THREE from 'three/webgpu';
-import { pass, uniform, vec2, vec4, float, smoothstep, screenUV } from 'three/tsl';
+import { pass, uniform, vec2, vec4, float, int, smoothstep, screenUV, mrt, output, velocity } from 'three/tsl';
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
 import { film } from 'three/addons/tsl/display/FilmNode.js';
+import { motionBlur } from 'three/addons/tsl/display/MotionBlur.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Butterfly, REST_HEIGHT } from './butterfly.js';
 import { morphoPattern, mutatePattern } from './pattern.js';
 import { buildRift, VOID } from './rift.js';
-import { buildDust } from './dust.js';
 
 // Units are meters. The wall is the z = 0 plane, facing +z.
 const HDRI = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/garden_nook_2k.hdr';
@@ -47,9 +47,8 @@ function onWall() {
 // 2.6 is ~6.4x the HDRI sky's irradiance on a horizontal surface (0.905 x ENV): within a clear day's
 // direct/diffuse ratio of ~5-10, so sun and sky agree with no clipped HDRI sun to measure against.
 const sun = new THREE.DirectionalLight(0xfff0dc, 2.6);
-// From the side, opposite the camera (az -65°, el 40°): the dust between camera and wall scatters it
-// forward and shows, and the blue gets the oblique light that whitens one side. From near the
-// camera, as before, the dust was all but invisible.
+// From the side, opposite the camera (az -65°, el 40°): the blue gets the oblique light that whitens
+// one side, and the shadow falls long across the platform.
 sun.position.set(Math.sin(deg(-65)) * Math.cos(deg(40)), Math.sin(deg(40)), Math.cos(deg(-65)) * Math.cos(deg(40)));
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -60,8 +59,6 @@ sun.shadow.radius = 3;
 scene.add(sun, sun.target);
 // The shadow camera covers only ±25 cm, so the light follows the butterfly (see the loop).
 const sunDir = sun.position.clone().normalize();
-const dust = buildDust(sunDir, sun.color);
-scene.add(dust.mesh);
 
 // ---------- environment: the garden HDRI as seen from the butterfly, wall included ----------
 
@@ -111,7 +108,12 @@ function captureEnvironment(pos) {
 const pipeline = new THREE.RenderPipeline(renderer);
 const scenePass = pass(scene, camera, { samples: 4 });
 const focus = uniform(camera.position.length());
-const sharp = dof(scenePass.getTextureNode(), scenePass.getViewZNode(), focus, uniform(0.03), uniform(2));
+// Motion blur over a 1/250 s exposure (a usual shutter for butterflies): the beating wings smear at
+// their tips while the body stays sharp. Velocity is per frame, so it's scaled by shutter/frame time.
+scenePass.setMRT(mrt({ output, velocity }));
+const shutter = uniform(0);
+const moving = motionBlur(scenePass.getTextureNode(), scenePass.getTextureNode('velocity').mul(shutter), int(8));
+const sharp = dof(moving, scenePass.getViewZNode(), focus, uniform(0.03), uniform(2));
 // What a real lens and sensor add, so the frame reads as photographed: glow around the bright lines
 // and highlights, a little colour fringing toward the corners, darker corners, and fine grain.
 const glowing = sharp.add(bloom(sharp, 0.2, 0.3, 1.1)); // threshold above the lit wings, so only highlights and lines glow
@@ -405,12 +407,23 @@ addEventListener('resize', () => {
 // ---------- loop ----------
 
 const clock = new THREE.Clock();
+// Hand-held: the view sways by ~0.05° in slow, uneven drifts. Only the rotation is touched, after the
+// orbit controls have set the camera, so the controls never see it.
+const HANDHELD = deg(0.05);
+function handheld(t) {
+  const sway = (a, b, c) => (Math.sin(t * a) * 0.5 + Math.sin(t * b + 1.7) * 0.3 + Math.sin(t * c + 4.1) * 0.2) * HANDHELD;
+  camera.rotateX(sway(0.9, 2.3, 5.1));
+  camera.rotateY(sway(0.7, 1.9, 4.3));
+  camera.rotateZ(sway(0.5, 1.3, 3.7) * 0.5);
+}
 // ?slow=0.1 plays time slower, for watching the wingbeats.
 const timeScale = +(params.get('slow') ?? 1);
 let realRadius = 0;
 const envAt = { sun: new THREE.Vector3(), pos: new THREE.Vector3(0, 0, -1), radius: 0 };
 renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 1 / 30) * timeScale;
+  const frame = clock.getDelta();
+  const dt = Math.min(frame, 1 / 30) * timeScale;
+  shutter.value = Math.min((1 / 250) / Math.max(frame, 1e-3), 1);
   if (state.mode === 'rest') idle(dt);
   else if (state.mode === 'away') {
     state.timer -= dt;
@@ -426,7 +439,6 @@ renderer.setAnimationLoop(() => {
   const realTarget = bf.group.visible ? 0.12 * (1 - THREE.MathUtils.smoothstep(z, 0.03, 0.35)) : 0;
   realRadius = THREE.MathUtils.damp(realRadius, realTarget, 2, dt);
   rift.update(dt, bf.group.position.x, bf.group.position.y, realRadius);
-  dust.update(dt, bf.group.position);
   // Re-capture the environment when the sun turns, the wall has grown or shrunk, or the butterfly has
   // moved: 1 cm near the wall, more further out, where the wall's share of the view changes slowly.
   if (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.01 ||
@@ -438,6 +450,7 @@ renderer.setAnimationLoop(() => {
   }
   controls.target.lerp(state.rest.pos, 1 - Math.exp(-2 * dt));
   controls.update();
+  handheld(clock.elapsedTime);
   focus.value = THREE.MathUtils.damp(focus.value, camera.position.distanceTo(bf.group.position), 6, dt);
   pipeline.render();
 });
