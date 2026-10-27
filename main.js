@@ -352,14 +352,13 @@ function idle(dt) {
   const t = state.idleT = (state.idleT ?? 0) + dt;
 
   // As on a flower, the wings never quite settle: a slow pumping, open from the rest angle (or a
-  // little open from closed), every ~2.5 s, by an amount that drifts between 5° and 30°, the hind
-  // wings a beat behind (est., from videos of feeding butterflies).
+  // little open from closed), every ~2.5 s, by an amount that drifts between 5° and 30° (est., from
+  // videos of feeding butterflies). Fore and hind wings move together: they overlap, and any lag
+  // pushes one through the other.
   const amp = pose ? 0 : deg(5 + 25 * (0.5 + 0.5 * Math.sin(t * 0.13 + 1)) ** 2);
-  const pump = (lag) => amp * (0.5 - 0.5 * Math.cos(t * 2.5 - lag));
-  const closed = state.restTarget > deg(45);
-  const fore = closed ? state.restAngle - pump(0) * 0.5 : state.restAngle + pump(0);
-  const hind = closed ? state.restAngle - pump(0.4) * 0.5 : state.restAngle + pump(0.4);
-  bf.setWings(fore, hind, 0, state.lean);
+  const pump = amp * (0.5 - 0.5 * Math.cos(t * 2.5));
+  const angle = state.restTarget > deg(45) ? state.restAngle - pump * 0.5 : state.restAngle + pump;
+  bf.setWings(angle, angle, 0, state.lean);
   // Breathing: the abdomen lifts and settles.
   bf.abdomen.rotation.x = deg(-6) + deg(1.5) * Math.sin(t * 1.7);
 
