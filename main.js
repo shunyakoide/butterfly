@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { pass, uniform, vec2, vec4, float, smoothstep, screenUV, mix } from 'three/tsl';
+import { pass, uniform, vec2, vec4, float, smoothstep, screenUV, mix, mrt, output } from 'three/tsl';
 import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
@@ -11,6 +11,7 @@ import { buildRift, VOID } from './rift.js';
 import { buildCircuit } from './circuit.js';
 import { buildGlass } from './glass.js';
 import { buildOverlay } from './fx.js';
+import { buildDigital, STYLES } from './digital.js';
 
 // Units are meters. The wall is the z = 0 plane, facing +z.
 const HDRI = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/garden_nook_2k.hdr';
@@ -142,8 +143,10 @@ const blurred = gaussianBlur(colour, null, 2, { resolutionScale: 0.5 });
 const sharp = mix(colour, mix(soft, blurred, smoothstep(0.35, 1, coc)), smoothstep(0, 0.35, coc));
 // What a real lens and sensor add, so the frame reads as photographed: glow around the bright lines
 // and highlights, a little colour fringing toward the corners, darker corners, and fine grain.
-const glowing = sharp.add(bloom(sharp, 0.2, 0.3, 1.1)); // threshold above the lit wings, so only highlights and lines glow
-const fringed = chromaticAberration(glowing, 0.2, vec2(0.5, 0.5), 1.0);
+const lens = (image) => {
+  const glowing = image.add(bloom(image, 0.2, 0.3, 1.1)); // threshold above the lit wings, so only highlights and lines glow
+  return chromaticAberration(glowing, 0.2, vec2(0.5, 0.5), 1.0);
+};
 const vignette = smoothstep(0.35, 0.95, screenUV.sub(0.5).length().mul(1.4)).mul(0.45).oneMinus();
 // (outputNode is set below, once the butterfly exists for the overlay.)
 
@@ -158,7 +161,23 @@ scene.add(bf.group);
 // vignette and grain, so they read as part of the same photographed frame.
 const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode() });
 overlay.toggle(params.get('fx') === 'on');
-pipeline.outputNode = film(vec4(overlay.apply(fringed.rgb).mul(vignette), 1), float(0.12));
+
+// The butterfly as a screen print (digital.js): D steps through the styles and off, ?print=dots|
+// halftone|ascii to start with one. The butterfly's materials always write a mask beside the colour
+// (switching the scene pass's outputs at run time breaks the pipelines already built for the rest).
+scenePass.setMRT(mrt({ output, mask: float(0) }));
+scenePass.getTexture('mask').type = THREE.UnsignedByteType;
+const bfMask = mrt({ mask: float(1) });
+bf.group.traverse((o) => { if (o.isMesh) o.material.mrtNode = bfMask; });
+const digital = buildDigital({ camera, bf, colour, mask: scenePass.getTextureNode('mask') });
+const chains = {};
+let printStyle = STYLES.includes(params.get('print')) ? params.get('print') : null;
+function setOutput() {
+  // Each chain is built once (its bloom holds render targets).
+  pipeline.outputNode = chains[printStyle] ??= film(vec4(overlay.apply(lens(printStyle ? digital.apply(sharp, printStyle) : sharp).rgb).mul(vignette), 1), float(0.12));
+  pipeline.needsUpdate = true;
+}
+setOutput();
 
 const WALL_N = new THREE.Vector3(0, 0, 1);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -446,9 +465,10 @@ addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = state.mode === 'rest' && hitsButterfly(e) ? 'pointer' : '';
 });
-hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽 ・ W で壁を切り替え ・ E で分析表示';
+hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽 ・ W で壁を切り替え ・ E で分析表示 ・ D でプリント表示';
 addEventListener('keydown', (e) => {
   if (e.key === 'e' || e.key === 'E') overlay.toggle();
+  if (e.key === 'd' || e.key === 'D') { printStyle = [...STYLES, null][(STYLES.indexOf(printStyle) + 1) % (STYLES.length + 1)]; setOutput(); }
   if (e.key !== 'w' && e.key !== 'W') return;
   wallKind = WALLS[(WALLS.indexOf(wallKind) + 1) % WALLS.length];
   showWall();
@@ -511,13 +531,14 @@ renderer.setAnimationLoop(() => {
   focus.value = THREE.MathUtils.damp(focus.value, camera.position.distanceTo(bf.group.position), 6, dt);
   pipeline.render();
   overlay.update(clock.elapsedTime);
+  if (printStyle) digital.update(clock.elapsedTime);
   if (perf) showPerf();
 });
 
 // Every half second the GPU time of all the frames since (the timestamp queries pile up until
 // resolved) is shown per frame, with the frame rate. window.app lets the console switch parts off to
 // see what they cost.
-if (perf) window.app = { renderer, pipeline, scene, camera, scenePass, rift, circuit, glass, overlay, bf, outputs: { sharp, glowing, fringed } };
+if (perf) window.app = { renderer, pipeline, scene, camera, scenePass, rift, circuit, glass, overlay, bf, outputs: { sharp }, digital };
 function showPerf() {
   perfAt.frames++;
   const now = performance.now();
