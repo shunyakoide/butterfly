@@ -26,15 +26,16 @@ function anchorsOf(bf) {
   return list;
 }
 
-// What the insets magnify: points in the blue middle of each wing, 10-40% of the way from its centre
-// (the outline's mean) to its edge; at the edge there is little but the dark border and fringe hairs.
+// What the insets magnify: points from the blue middle of each wing out to where the blue meets the
+// black border, 15-70% of the way from its centre (the outline's mean) to its edge; right at the edge
+// there is little but fringe hairs.
 function blueSpots(bf) {
   const list = [];
   bf.pivots.forEach((p) => {
     const mesh = p.children[0], pts = bf.wings[p.userData.hind ? 1 : 0].pts;
     const c = pts.reduce((m, q) => m.add(q), new THREE.Vector2()).divideScalar(pts.length);
     for (let k = 0; k < 6; k++) {
-      const e = pts[Math.floor((k + 0.5) / 6 * pts.length)], f = 0.1 + 0.3 * Math.random();
+      const e = pts[Math.floor((k + 0.5) / 6 * pts.length)], f = 0.15 + 0.55 * Math.random();
       list.push({ obj: mesh, local: new THREE.Vector3(c.x + (e.x - c.x) * f, c.y + (e.y - c.y) * f, 0) });
     }
   });
