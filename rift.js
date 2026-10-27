@@ -10,19 +10,32 @@ import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp,
 // butterfly through its environment capture.
 
 export const VOID = 0x010103; // the colour of the space behind
-const SPAN = 1.0;   // m, extent of the wall (the butterfly lands within the middle of the view)
+const SPAN = 1.0;   // m, extent of the wall searched for visible columns
 const CELL = 0.005; // m, column pitch; each column is drawn 84% of it wide, so they read apart
+const DEEPEST = 0.33; // m, how far back a column's foot can reach (sink + post length, below)
 
-// One quad per column top, for the columns drawn filled.
-function facesGeometry() {
-  const n = Math.round(SPAN / CELL), h0 = -SPAN / 2, a = CELL * 0.42;
-  const quad = [[-a, -a], [a, -a], [a, a], [-a, -a], [a, a], [-a, a]];
-  const pos = [], cell = [];
+// The camera never moves, so only columns that show in it are built: a column is kept when the box
+// spanned by its top and its deepest foot, on screen, overlaps the frame (with a margin for the sway).
+function visibleCells(camera) {
+  camera.updateMatrixWorld();
+  const n = Math.round(SPAN / CELL), h0 = -SPAN / 2, p = new THREE.Vector3(), cells = [];
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const cx = h0 + (i + 0.5) * CELL, cy = h0 + (j + 0.5) * CELL;
-      for (const [x, y] of quad) { pos.push(cx + x, cy + y, 0); cell.push(cx, cy); }
+      const a = p.set(cx, cy, 0).project(camera).clone(), b = p.set(cx, cy, -DEEPEST).project(camera);
+      if (Math.max(a.x, b.x) > -1.05 && Math.min(a.x, b.x) < 1.05 && Math.max(a.y, b.y) > -1.05 && Math.min(a.y, b.y) < 1.05) cells.push(cx, cy);
     }
+  }
+  return cells;
+}
+
+// One quad per column top, for the columns drawn filled.
+function facesGeometry(cells) {
+  const a = CELL * 0.42, quad = [[-a, -a], [a, -a], [a, a], [-a, -a], [a, a], [-a, a]];
+  const pos = [], cell = [];
+  for (let c = 0; c < cells.length; c += 2) {
+    const cx = cells[c], cy = cells[c + 1];
+    for (const [x, y] of quad) { pos.push(cx + x, cy + y, 0); cell.push(cx, cy); }
   }
   return new THREE.BufferGeometry()
     .setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
@@ -31,18 +44,15 @@ function facesGeometry() {
 
 // Per column: the 4 edges of its top and its 4 corner posts. z is 0 at the top and -1 at the foot;
 // the shader places it.
-function columnsGeometry() {
-  const n = Math.round(SPAN / CELL), h0 = -SPAN / 2, a = CELL * 0.42;
-  const corners = [[-a, -a], [a, -a], [a, a], [-a, a]];
+function columnsGeometry(cells) {
+  const a = CELL * 0.42, corners = [[-a, -a], [a, -a], [a, a], [-a, a]];
   const pos = [], cell = [];
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      const cx = h0 + (i + 0.5) * CELL, cy = h0 + (j + 0.5) * CELL;
-      for (let k = 0; k < 4; k++) {
-        const [x0, y0] = corners[k], [x1, y1] = corners[(k + 1) % 4];
-        pos.push(cx + x0, cy + y0, 0, cx + x1, cy + y1, 0, cx + x0, cy + y0, 0, cx + x0, cy + y0, -1);
-        for (let v = 0; v < 4; v++) cell.push(cx, cy);
-      }
+  for (let c = 0; c < cells.length; c += 2) {
+    const cx = cells[c], cy = cells[c + 1];
+    for (let k = 0; k < 4; k++) {
+      const [x0, y0] = corners[k], [x1, y1] = corners[(k + 1) % 4];
+      pos.push(cx + x0, cy + y0, 0, cx + x1, cy + y1, 0, cx + x0, cy + y0, 0, cx + x0, cy + y0, -1);
+      for (let v = 0; v < 4; v++) cell.push(cx, cy);
     }
   }
   return new THREE.BufferGeometry()
@@ -50,7 +60,7 @@ function columnsGeometry() {
     .setAttribute('cell', new THREE.Float32BufferAttribute(cell, 2));
 }
 
-export function buildRift() {
+export function buildRift(camera) {
   const centre = uniform(new THREE.Vector2()), radius = uniform(0);
 
   // ---------- the wall of lines ----------
@@ -74,20 +84,27 @@ export function buildRift() {
   // A faint ring sweeping out from the butterfly now and then.
   const ring = exp(d.sub(fract(time.mul(0.15)).mul(radius).mul(1.6)).div(0.004).pow(2).negate()).mul(0.8);
   lineMaterial.colorNode = mix(new THREE.Color(VOID), vec3(0.35, 0.75, 1).mul(ring.add(0.7)), top.mul(0.75).add(0.25).mul(fade).mul(exp(sink.mul(-8))));
-  const columns = columnsGeometry();
-  const lines = new THREE.LineSegments(columns, lineMaterial);
+  const lines = new THREE.LineSegments(undefined, lineMaterial);
   lines.frustumCulled = false;
-  const envLines = new THREE.LineSegments(columns, lineMaterial);
+  const envLines = new THREE.LineSegments(undefined, lineMaterial);
 
   // The filled tops: a dimmer, uneven blue just under the top edges; other columns' quads collapse.
   const faceMaterial = new THREE.MeshBasicNodeMaterial();
   faceMaterial.positionNode = around(select(filled, 1, 0)).add(vec3(0, 0, sink.negate().sub(0.0002)));
   const shade = hash(cell.x.mul(1597).add(cell.y.mul(2741))).mul(0.5).add(0.3);
   faceMaterial.colorNode = mix(new THREE.Color(VOID), vec3(0.2, 0.5, 0.8).mul(ring.add(0.7)).mul(shade), fade.mul(exp(sink.mul(-8))));
-  const tops = facesGeometry();
-  const faces = new THREE.Mesh(tops, faceMaterial);
+  const faces = new THREE.Mesh(undefined, faceMaterial);
   faces.frustumCulled = false;
-  const envFaces = new THREE.Mesh(tops, faceMaterial);
+  const envFaces = new THREE.Mesh(undefined, faceMaterial);
+  // Rebuilt when the frame changes shape.
+  function fit() {
+    lines.geometry.dispose();
+    faces.geometry.dispose();
+    const cells = visibleCells(camera);
+    envLines.geometry = lines.geometry = columnsGeometry(cells);
+    envFaces.geometry = faces.geometry = facesGeometry(cells);
+  }
+  fit();
 
   // Shadows on the platform: a surface that draws nothing but the shadow, over the lines behind it.
   const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowNodeMaterial({ opacity: 0.7 }));
@@ -135,5 +152,5 @@ export function buildRift() {
   envBehind.position.z = -0.05;
   const envWall = new THREE.Group().add(envLines, envFaces, envBehind);
 
-  return { wall, space: specks, envWall, update };
+  return { wall, space: specks, envWall, update, fit };
 }

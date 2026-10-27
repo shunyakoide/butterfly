@@ -5,7 +5,6 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
 import { film } from 'three/addons/tsl/display/FilmNode.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Butterfly, REST_HEIGHT } from './butterfly.js';
 import { morphoPattern, mutatePattern } from './pattern.js';
 import { buildRift, VOID } from './rift.js';
@@ -29,10 +28,11 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.01, 60); // far: the space behind the wall
 camera.position.set(0.1, -0.12, 0.25);
 camera.lookAt(0, 0.005, 0);
+const cameraRest = camera.quaternion.clone(); // the view is fixed; only the hand-held sway turns it
 
 // ---------- wall: lines around the butterfly, and the space behind (rift.js) ----------
 
-const rift = buildRift();
+const rift = buildRift(camera);
 scene.add(rift.wall, rift.space);
 // Where the wall was: 1.6 m square, for picking points on it (most of it is no longer drawn).
 const wallPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
@@ -350,14 +350,7 @@ function hitsButterfly(e) {
   const hit = onWall();
   return hit && hit.distanceTo(state.rest.pos) < 0.035;
 }
-// Drag orbits the camera, Shift+drag moves the sun, and a tap (no drag) touches the butterfly.
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0.005, 0);
-controls.enableDamping = true;
-controls.enablePan = false;
-// Stay in front of the wall.
-Object.assign(controls, { minDistance: 0.05, maxDistance: 1.2, minAzimuthAngle: deg(-80), maxAzimuthAngle: deg(80), minPolarAngle: deg(10), maxPolarAngle: deg(170) });
-controls.update();
+// Drag moves the sun, and a tap (no drag) touches the butterfly. The view is fixed.
 
 const sunAngles = { az: Math.atan2(sunDir.x, sunDir.z), el: Math.asin(sunDir.y) };
 function placeSun() {
@@ -372,16 +365,14 @@ if (sunParam) {
 }
 let down = null;
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  down = { x: e.clientX, y: e.clientY, sun: e.shiftKey };
-  controls.enabled = !e.shiftKey;
+  down = { x: e.clientX, y: e.clientY };
 });
 addEventListener('pointerup', (e) => {
   if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5 && state.mode === 'rest' && hitsButterfly(e)) takeOff();
   down = null;
-  controls.enabled = true;
 });
 addEventListener('pointermove', (e) => {
-  if (!down?.sun) return;
+  if (!down) return;
   // Front hemisphere only: from grazing along one side of the wall to the other.
   sunAngles.az = THREE.MathUtils.clamp(sunAngles.az + e.movementX * 0.01, deg(-85), deg(85));
   sunAngles.el = THREE.MathUtils.clamp(sunAngles.el - e.movementY * 0.01, deg(-85), deg(85));
@@ -390,22 +381,23 @@ addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = state.mode === 'rest' && hitsButterfly(e) ? 'pointer' : '';
 });
-hud.textContent = '蝶に触れてみてください ・ ドラッグで視点 ・ Shift+ドラッグで太陽';
+hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽';
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  rift.fit();
 });
 
 // ---------- loop ----------
 
 const clock = new THREE.Clock();
-// Hand-held: the view sways by ~0.05° in slow, uneven drifts. Only the rotation is touched, after the
-// orbit controls have set the camera, so the controls never see it.
+// Hand-held: the view sways by ~0.05° in slow, uneven drifts about its fixed direction.
 const HANDHELD = deg(0.05);
 function handheld(t) {
   const sway = (a, b, c) => (Math.sin(t * a) * 0.5 + Math.sin(t * b + 1.7) * 0.3 + Math.sin(t * c + 4.1) * 0.2) * HANDHELD;
+  camera.quaternion.copy(cameraRest);
   camera.rotateX(sway(0.9, 2.3, 5.1));
   camera.rotateY(sway(0.7, 1.9, 4.3));
   camera.rotateZ(sway(0.5, 1.3, 3.7) * 0.5);
@@ -440,8 +432,6 @@ renderer.setAnimationLoop(() => {
     envAt.pos.copy(bf.group.position);
     captureEnvironment(envAt.pos.clone().setZ(Math.max(envAt.pos.z, 0.003)));
   }
-  controls.target.lerp(state.rest.pos, 1 - Math.exp(-2 * dt));
-  controls.update();
   handheld(clock.elapsedTime);
   focus.value = THREE.MathUtils.damp(focus.value, camera.position.distanceTo(bf.group.position), 6, dt);
   pipeline.render();
