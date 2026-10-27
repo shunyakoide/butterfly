@@ -1,14 +1,15 @@
 import * as THREE from 'three/webgpu';
-import { uniform, texture, screenUV, screenSize, vec2, vec3, float, mix, step, smoothstep, max, hash, sqrt } from 'three/tsl';
+import { uniform, texture, screenUV, screenSize, time, vec2, vec3, mix, step, smoothstep, max, hash, sqrt } from 'three/tsl';
 
 // The butterfly redrawn as a screen print: a green dot-matrix dither, a blue halftone of big dots,
 // or ASCII characters on blue. Only the butterfly's pixels change (a mask written by its materials
 // in the scene pass), in square cells read from the rendered frame at their centre, so its silhouette
-// turns blocky. A scan line sweeps slowly across it, so the print covers the whole butterfly at times
-// and only part of it at others.
+// turns blocky. It shows in square blocks at random places that keep changing, so the print covers the
+// whole butterfly at times and only scattered parts of it at others.
 
 export const STYLES = ['dots', 'halftone', 'ascii'];
 const CELL = { dots: [3, 3], halftone: [9, 9], ascii: [7, 11] }; // CSS px
+const BLOCK = 48; // CSS px, the squares the print shows in
 const GLYPHS = ' .:-=+*#%@';
 const COLOUR = { dots: vec3(0.3, 1, 0.35), halftone: vec3(0.05, 0.35, 1), ascii: vec3(0.85, 0.92, 1) };
 
@@ -25,9 +26,8 @@ function glyphAtlas() {
   return t;
 }
 
-export function buildDigital({ colour, mask, camera, bf }) {
-  const dpr = uniform(1), centre = uniform(new THREE.Vector2()), size = uniform(1);
-  const edge = uniform(0), dir = uniform(new THREE.Vector2(1, 0));
+export function buildDigital({ colour, mask }) {
+  const dpr = uniform(1), coverage = uniform(1);
   const atlas = glyphAtlas();
 
   function apply(base, style) {
@@ -54,26 +54,18 @@ export function buildDigital({ colour, mask, camera, bf }) {
       const g = texture(atlas, vec2(idx.add(local.x).div(n), local.y.oneMinus())).r;
       print = mix(vec3(0.12, 0.27, 0.7), COLOUR.ascii, g);
     }
-    // Which side of the sweep each cell is on, in butterfly sizes from its centre.
-    const side = (p) => p.sub(centre).dot(dir).div(size);
-    const covered = step(side(at), edge);
-    const line = smoothstep(dpr.mul(1.5), float(0), side(P).sub(edge).abs().mul(size)).mul(on);
-    return mix(base, print, on.mul(covered)).add(COLOUR[style].mul(line).mul(0.8));
+    // Each block (picked by its cells' centres, so cells stay whole) draws a new chance on its own
+    // ~1.7 s beat, and shows the print while that is under the coverage.
+    const block = at.div(dpr.mul(BLOCK)).floor(), id = block.x.add(block.y.mul(1024)).add(4096);
+    const beat = time.mul(0.6).add(hash(id)).floor();
+    const covered = step(hash(id.add(beat.mul(65536))), coverage);
+    return mix(base, print, on.mul(covered));
   }
 
-  const v = new THREE.Vector3(), r = new THREE.Vector3();
   function update(t) {
-    const w = innerWidth * Math.min(devicePixelRatio, 2), h = innerHeight * Math.min(devicePixelRatio, 2);
     dpr.value = Math.min(devicePixelRatio, 2);
-    const toPx = (p) => { p.project(camera); return new THREE.Vector2((p.x * 0.5 + 0.5) * w, (0.5 - p.y * 0.5) * h); };
-    const c = toPx(v.copy(bf.group.position));
-    const e = toPx(r.setFromMatrixColumn(camera.matrixWorld, 0).multiplyScalar(0.065).add(bf.group.position));
-    centre.value.copy(c);
-    size.value = Math.max(2 * c.distanceTo(e), 1);
-    // Half covered, then all of it (held a while), then back to a small part, on a 16 s cycle, with
-    // the sweep's direction slowly turning.
-    edge.value = THREE.MathUtils.clamp(0.25 + 0.75 * Math.sin(t * Math.PI / 8), -0.25, 0.6);
-    dir.value.set(Math.cos(t * 0.05 + 0.6), Math.sin(t * 0.05 + 0.6));
+    // A few blocks, then about half, then all of it (held a while), on a 16 s cycle.
+    coverage.value = THREE.MathUtils.clamp(0.45 + 0.65 * Math.sin(t * Math.PI / 8), 0.12, 1);
   }
 
   return { apply, update };

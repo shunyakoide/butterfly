@@ -169,7 +169,7 @@ scenePass.setMRT(mrt({ output, mask: float(0) }));
 scenePass.getTexture('mask').type = THREE.UnsignedByteType;
 const bfMask = mrt({ mask: float(1) });
 bf.group.traverse((o) => { if (o.isMesh) o.material.mrtNode = bfMask; });
-const digital = buildDigital({ camera, bf, colour, mask: scenePass.getTextureNode('mask') });
+const digital = buildDigital({ colour, mask: scenePass.getTextureNode('mask') });
 const chains = {};
 let printStyle = STYLES.includes(params.get('print')) ? params.get('print') : null;
 function setOutput() {
