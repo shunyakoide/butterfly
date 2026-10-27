@@ -196,14 +196,16 @@ function startJourney(mode, points, speed) {
 const BEAT_HZ = 5.9;                 // free flight, ±1.7
 const STROKE_TOP = deg(88);          // wings (nearly) clap above the back
 const STROKE_AMP = deg(128);         // forewing amplitude, understory species
-const HIND_LAG = 0.12;               // rad of phase; fore and hind wings move nearly together
-const TWIST = deg(15);               // est.: pronation on the downstroke, supination on the upstroke
+// Fore and hind wings stroke in phase (they overlap), but the hindwing's pitch swings more and a
+// quarter-beat later (monarch: Lou et al. 2024).
+const HIND_TWIST = 1.3;
+const TWIST = deg(35);               // pronation on the downstroke, supination on the upstroke (painted lady, up to ~40°: Zheng et al. 2013)
 const SPEED = 1.3;                   // m/s, climbing escape flight
 const CLIMB = Math.tan(deg(13));     // path slope while flapping
 const SINK = Math.tan(deg(11));      // glide slope
 const GLIDE_WINGS = deg(12);         // est.: slight dihedral while gliding
 const PITCH = deg(44);               // body pitch, climbing flight
-const BOB = 0.003;                   // est.: body heave per wingbeat (m)
+const BOB = 0.012;                   // est.: body heave per wingbeat (m); Morpho moves 0.3–0.4 m per beat
 const START_SPEED = 0.2;             // est.: speed off the leg push, and at touchdown
 // Path irregularity: no turning rates or sinuosity values were found for Morpho. Understory species
 // fly fairly straight and fast (Le Roy 2021), so the meander is kept moderate (sinuosity ~1.15).
@@ -286,9 +288,10 @@ function fly(dt) {
 
   const stroke = (ph) => STROKE_TOP - STROKE_AMP * (0.5 - 0.5 * Math.cos(ph));
   const fore = THREE.MathUtils.lerp(GLIDE_WINGS, stroke(state.phase), state.flap);
-  const hind = THREE.MathUtils.lerp(GLIDE_WINGS, stroke(state.phase - HIND_LAG), state.flap);
-  const twist = -TWIST * Math.sin(state.phase) * state.flap;
-  bf.setWings(THREE.MathUtils.lerp(state.restAngle, fore, air), THREE.MathUtils.lerp(state.restAngle, hind, air), twist * air, state.lean * (1 - air));
+  const wings = THREE.MathUtils.lerp(state.restAngle, fore, air);
+  const twist = -TWIST * Math.sin(state.phase) * state.flap * air;
+  const hindTwist = -TWIST * HIND_TWIST * Math.sin(state.phase - Math.PI / 2) * state.flap * air;
+  bf.setWings(wings, wings, twist, state.lean * (1 - air), hindTwist);
 
   // Climb while flapping, sink while gliding; the offset returns to the path near the wall.
   state.alt += (state.flapping > 0.5 ? CLIMB : -SINK) * SPEED * dt * free;
@@ -312,7 +315,8 @@ function fly(dt) {
 
   // Body pitched up in flight, rocking with each beat; more nose-up while braking to land.
   const brake = state.mode === 'landing' ? THREE.MathUtils.smoothstep(s, 0.7, 0.95) : 0;
-  const pitch = THREE.MathUtils.lerp(deg(15), PITCH, state.flap) + deg(20) * brake + deg(8) * Math.sin(state.phase) * state.flap;
+  // Each beat rocks it by ~±25°, a quarter-beat behind the wings: lowest mid-downstroke (Pieris: Suzuki et al. 2022).
+  const pitch = THREE.MathUtils.lerp(deg(15), PITCH, state.flap) + deg(20) * brake - deg(25) * Math.sin(state.phase) * state.flap;
   const heading = state.vel.lengthSq() > 0.01 ? state.vel.clone().normalize() : tangent;
   // Bank into turns: roll from the sideways acceleration, as for any flier (a = v·dθ/dt).
   const accel = state.prevVel ? state.vel.clone().sub(state.prevVel).divideScalar(Math.max(dt, 1e-4)) : new THREE.Vector3();
@@ -323,8 +327,8 @@ function fly(dt) {
   flight.multiply(tmpQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), state.bank));
   flight.multiply(tmpQ.setFromAxisAngle(X_AXIS, pitch));
   bf.group.quaternion.slerpQuaternions(state.rest.quat, flight, air);
-  // The abdomen swings against the wings.
-  bf.abdomen.rotation.x = deg(-6) + deg(10) * Math.sin(state.phase + 1.2) * state.flap * air;
+  // The abdomen swings against the wings: up on the downstroke, down on the upstroke (monarch, Pieris).
+  bf.abdomen.rotation.x = deg(-6) - deg(15) * Math.sin(state.phase) * state.flap * air;
 
   if (s >= 1) {
     if (state.mode === 'takeoff') { state.mode = 'away'; state.timer = 1.4; bf.group.visible = false; }
@@ -359,18 +363,20 @@ function idle(dt) {
   const pump = amp * (0.5 - 0.5 * Math.cos(t * 2.5));
   const angle = state.restTarget > deg(45) ? state.restAngle - pump * 0.5 : state.restAngle + pump;
   bf.setWings(angle, angle, 0, state.lean);
-  // Breathing: the abdomen lifts and settles.
-  bf.abdomen.rotation.x = deg(-6) + deg(1.5) * Math.sin(t * 1.7);
+  // Breathing comes in bouts: a few small lifts of the abdomen, then a pause (Wasserthal 1980; est. rates).
+  bf.abdomen.rotation.x = deg(-6) + deg(1.5) * Math.sin(t * 6) * Math.max(0, Math.sin(t * 0.35)) ** 4;
 
-  // Antennae: each sweeps slowly on its own and now and then twitches, then eases back.
-  state.twitch ??= [[0, 0], [0, 0]];
+  // Antennae: mostly held still, each re-aimed by a few degrees every few seconds, now and then a
+  // quick twitch that eases back (est.; no measured rates, but continuous swaying looks wrong).
+  state.aim ??= [[0, 0, 0, 0], [0, 0, 0, 0]];
   bf.antennae.forEach((a, i) => {
-    const s = i ? 1 : -1, tw = state.twitch[i];
-    if (Math.random() < dt / 2.5) [tw[0], tw[1]] = [deg(rand(-12, 12)), deg(rand(-10, 10))];
-    tw[0] = THREE.MathUtils.damp(tw[0], 0, 3, dt);
-    tw[1] = THREE.MathUtils.damp(tw[1], 0, 3, dt);
-    a.rotation.z = s * deg(4) * Math.sin(t * 0.9 + i * 2.1) + deg(2) * Math.sin(t * 2.3 + i) + tw[0];
-    a.rotation.x = deg(5) * Math.sin(t * 0.7 + i * 1.3) + tw[1];
+    const [yaw, pitch, wait] = state.aim[i];
+    if (wait <= 0) state.aim[i] = [deg(rand(-6, 6)), deg(rand(-6, 6)), rand(2, 6), Math.random() < 0.25 ? 1 : 0];
+    state.aim[i][2] -= dt;
+    const twitch = state.aim[i][3];
+    if (twitch) state.aim[i][3] = Math.max(0, twitch - dt * 4); // ~0.25 s
+    a.rotation.z = THREE.MathUtils.damp(a.rotation.z, yaw + deg(10) * twitch, 6, dt);
+    a.rotation.x = THREE.MathUtils.damp(a.rotation.x, pitch - deg(8) * twitch, 6, dt);
   });
 }
 
@@ -458,13 +464,12 @@ renderer.setAnimationLoop(() => {
   // Keep the butterfly in focus wherever it is.
   sun.target.position.copy(bf.group.position);
   sun.position.copy(bf.group.position).addScaledVector(sunDir, 0.7);
-  // The wall follows the butterfly: whole around it when it rests, shrinking as it flies out, gone
-  // while it's away (and built back up when it returns).
+  // The wall answers only where the feet are: it builds up after touchdown, around the resting spot,
+  // and dies away at take-off; nothing follows the butterfly in flight.
   const z = Math.abs(bf.group.position.z);
-  const realTarget = bf.group.visible ? 0.12 * (1 - THREE.MathUtils.smoothstep(z, 0.03, 0.35)) : 0;
-  realRadius = THREE.MathUtils.damp(realRadius, realTarget, 2, dt);
-  rift.update(dt, bf.group.position.x, bf.group.position.y, realRadius);
-  circuit.update(bf.group.position.x, bf.group.position.y, realRadius);
+  realRadius = THREE.MathUtils.damp(realRadius, state.mode === 'rest' ? 0.12 : 0, state.mode === 'rest' ? 2 : 5, dt);
+  rift.update(dt, state.rest.pos.x, state.rest.pos.y, realRadius);
+  circuit.update(state.rest.pos.x, state.rest.pos.y, realRadius);
   // Re-capture the environment when the sun turns, the wall has grown or shrunk, or the butterfly has
   // moved: 1 cm near the wall, more further out, where the wall's share of the view changes slowly.
   if (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.01 ||

@@ -90,14 +90,14 @@ export class Butterfly {
   // twist: rotation about the wing's span, positive = leading edge up (supination).
   // lean: the right pair raised and the left lowered by this much, fading out as the wings close
   // (closed wings press together and would cross).
-  setWings(angle, hindAngle = angle, twist = 0, lean = 0) {
+  setWings(angle, hindAngle = angle, twist = 0, lean = 0, hindTwist = twist * 0.6) {
     const open = 1 - THREE.MathUtils.smoothstep(angle, 1.1, 1.5);
     for (const p of this.pivots) {
       const a = (p.userData.hind ? hindAngle : angle) + p.userData.side * lean * open;
       // Flap about the body axis first, then twist about the raised wing's span.
       p.rotation.order = 'YXZ';
       p.rotation.y = -p.userData.side * a;
-      p.rotation.x = twist * (p.userData.hind ? 0.6 : 1);
+      p.rotation.x = p.userData.hind ? hindTwist : twist;
       // Closed wings press flat against each other; with full camber (~2 mm) the two wings,
       // only 3 mm apart at the root, cross and the far wing's blue upperside shows through.
       const flat = THREE.MathUtils.smoothstep(a, 1.1, 1.5);
