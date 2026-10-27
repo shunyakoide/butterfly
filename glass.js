@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { attribute, positionGeometry, normalView, positionViewDirection, time, smoothstep, mix, vec3, exp, fract, sin } from 'three/tsl';
 import { footprint } from './circuit.js';
+import { PLATFORM } from './rift.js';
 
 // A third wall: the face of a crystal block, in silver and white. Glass tiles make the face the
 // butterfly stands on; behind them glass boxes of every size and a few dark solid blocks go back
@@ -17,7 +18,6 @@ const TRACES = 30; // maze lines per layer
 // Boxes as faces and edges, each vertex carrying its box's centre (so the shader can tell how far it
 // is from the butterfly), how far the box slides back (m) and a phase, plus whether it is solid.
 function blockGeometry(camera) {
-  camera.updateMatrixWorld();
   const r = Math.random;
   const glass = { pos: [], nrm: [], centre: [], slide: [], phase: [], move: [], frost: [], keep: [] };
   const solid = { pos: [], nrm: [], centre: [], slide: [], phase: [], move: [], frost: [], keep: [] };
@@ -121,7 +121,7 @@ export function buildGlass(camera, { centre, radius }) {
   const placed = shrunk.sub(vec3(0, 0, back)).add(attribute('shift', 'vec3').mul(shifted));
   // Dimmer with depth; brighter right around the resting butterfly.
   const depthFade = exp(placed.z.mul(2.5));
-  const near = exp(d.div(0.035).pow(2).negate()).mul(radius.div(0.12));
+  const near = exp(d.div(0.035).pow(2).negate()).mul(radius.div(PLATFORM));
 
   const faceMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
   faceMat.positionNode = placed;

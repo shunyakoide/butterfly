@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, select } from 'three/tsl';
+import { PLATFORM } from './rift.js';
 
 // A second wall, of circuitry: amber traces (some teal, some white) in layers that go back into the
 // dark, with pads at their ends and beams running straight back from some of them. Pulses of light
@@ -14,6 +15,7 @@ const RING = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -
 
 // Where the frame (with a margin for the sway) meets the plane at depth z.
 export function footprint(camera, z) {
+  camera.updateMatrixWorld();
   const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z), p = new THREE.Vector3();
   const box = new THREE.Box2();
   for (const [x, y] of [[-1.05, -1.05], [1.05, -1.05], [1.05, 1.05], [-1.05, 1.05]]) {
@@ -26,7 +28,6 @@ export function footprint(camera, z) {
 // Per vertex: u, the distance along its trace (m), so pulses can run along it; seed, one random number
 // per trace; kind, 0 for a trace, 1 for a pad, 2 for a beam.
 function circuitGeometry(camera) {
-  camera.updateMatrixWorld();
   const r = Math.random, pos = [], u = [], seed = [], kind = [];
   const seg = (a, b, u0, u1, s, k) => { pos.push(...a, ...b); u.push(u0, u1); seed.push(s, s); kind.push(k, k); };
   for (const z of LAYERS) {
@@ -82,14 +83,14 @@ export function buildCircuit(camera, { centre, radius }) {
   // While the butterfly rests, a core of light burns under its feet, lighting the traces on every
   // layer around it, as if the butterfly drew power from it.
   const dist = p.xy.sub(centre).length();
-  const hot = exp(dist.div(0.03).pow(2).negate()).mul(radius.div(0.12)).mul(3);
+  const hot = exp(dist.div(0.03).pow(2).negate()).mul(radius.div(PLATFORM)).mul(3);
   // Dimmer with depth; beams fade more slowly, so they reach far back.
   const depthFade = exp(p.z.mul(select(kind.equal(2), 0.8, 2)));
   // Mostly amber, some teal, some white.
   const tint = select(seed.greaterThan(0.85), vec3(0.3, 1, 0.7), select(seed.lessThan(0.2), vec3(0.9, 0.92, 1), vec3(1, 0.55, 0.18)));
   // The front layers show only around the resting butterfly; elsewhere, and while it is away, only the
   // pulses deeper back are left, moving in the dark.
-  const near = exp(dist.div(0.04).pow(2).negate()).mul(radius.div(0.12));
+  const near = exp(dist.div(0.04).pow(2).negate()).mul(radius.div(PLATFORM));
   const front = smoothstep(-0.06, -0.02, p.z);
   const shown = mix(1, near, front);
   const base = s1.mul(0.12).add(0.03).mul(near.mul(front)); // the steady glow, only near the butterfly

@@ -13,6 +13,8 @@ export const VOID = 0x010103; // the colour of the space behind
 const SPAN = 1.0;   // m, extent of the wall searched for visible columns
 const CELL = 0.005; // m, column pitch; each column is drawn 84% of it wide, so they read apart
 const DEEPEST = 0.3;  // m, how far back a column's foot can reach (sink + post length, below)
+// m, full radius of the platform under the resting butterfly; main.js grows it after touchdown, and the circuit and glass walls scale their glow by it (est.)
+export const PLATFORM = 0.12;
 
 // The camera never moves, so only columns that show in it are built: a column is kept when the box
 // spanned by its top and its deepest foot, on screen, overlaps the frame (with a margin for the sway).
@@ -29,35 +31,24 @@ function visibleCells(camera) {
   return cells;
 }
 
-// One quad per column top, for the columns drawn filled.
-function facesGeometry(cells) {
-  const a = CELL * 0.42, quad = [[-a, -a], [a, -a], [a, a], [-a, -a], [a, a], [-a, a]];
-  const pos = [], cell = [];
-  for (let c = 0; c < cells.length; c += 2) {
-    const cx = cells[c], cy = cells[c + 1];
-    for (const [x, y] of quad) { pos.push(cx + x, cy + y, 0); cell.push(cx, cy); }
-  }
-  return new THREE.BufferGeometry()
-    .setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-    .setAttribute('cell', new THREE.Float32BufferAttribute(cell, 2));
-}
-
-// Per column: the 4 edges of its top and its 4 corner posts. z is 0 at the top and -1 at the foot;
-// the shader places it.
-function columnsGeometry(cells) {
+// Per column, z 0 at the top and -1 at the foot (the shader places it): faces, one quad over its top,
+// for the columns drawn filled; columns, as lines, the 4 edges of its top and its 4 corner posts.
+function columnGeometry(cells) {
   const a = CELL * 0.42, corners = [[-a, -a], [a, -a], [a, a], [-a, a]];
-  const pos = [], cell = [];
+  const faces = { pos: [], cell: [] }, columns = { pos: [], cell: [] };
+  const put = (t, cx, cy, [x, y], z = 0) => { t.pos.push(cx + x, cy + y, z); t.cell.push(cx, cy); };
   for (let c = 0; c < cells.length; c += 2) {
     const cx = cells[c], cy = cells[c + 1];
+    for (const k of [0, 1, 2, 0, 2, 3]) put(faces, cx, cy, corners[k]);
     for (let k = 0; k < 4; k++) {
-      const [x0, y0] = corners[k], [x1, y1] = corners[(k + 1) % 4];
-      pos.push(cx + x0, cy + y0, 0, cx + x1, cy + y1, 0, cx + x0, cy + y0, 0, cx + x0, cy + y0, -1);
-      for (let v = 0; v < 4; v++) cell.push(cx, cy);
+      const c0 = corners[k], c1 = corners[(k + 1) % 4];
+      put(columns, cx, cy, c0); put(columns, cx, cy, c1); put(columns, cx, cy, c0); put(columns, cx, cy, c0, -1);
     }
   }
-  return new THREE.BufferGeometry()
-    .setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-    .setAttribute('cell', new THREE.Float32BufferAttribute(cell, 2));
+  const make = (t) => new THREE.BufferGeometry()
+    .setAttribute('position', new THREE.Float32BufferAttribute(t.pos, 3))
+    .setAttribute('cell', new THREE.Float32BufferAttribute(t.cell, 2));
+  return { faces: make(faces), columns: make(columns) };
 }
 
 // The columns stand where the feet are: centre and radius are the uniforms main.js shares with every wall.
@@ -104,9 +95,9 @@ export function buildRift(camera, { centre, radius }) {
   function fit() {
     lines.geometry.dispose();
     faces.geometry.dispose();
-    const cells = visibleCells(camera);
-    envLines.geometry = lines.geometry = columnsGeometry(cells);
-    envFaces.geometry = faces.geometry = facesGeometry(cells);
+    const b = columnGeometry(visibleCells(camera));
+    envLines.geometry = lines.geometry = b.columns;
+    envFaces.geometry = faces.geometry = b.faces;
   }
   fit();
 

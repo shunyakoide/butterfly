@@ -7,7 +7,7 @@ import { film } from 'three/addons/tsl/display/FilmNode.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { Butterfly, REST_HEIGHT } from './butterfly.js';
 import { morphoPattern } from './pattern.js';
-import { buildRift, buildSpace, VOID } from './rift.js';
+import { buildRift, buildSpace, VOID, PLATFORM } from './rift.js';
 import { buildCircuit } from './circuit.js';
 import { buildGlass } from './glass.js';
 import { buildOverlay } from './fx.js';
@@ -383,7 +383,7 @@ function fly(dt) {
   const bankTarget = THREE.MathUtils.clamp(Math.atan2(accel.dot(new THREE.Vector3().crossVectors(heading, UP).normalize()), 9.8), -MAX_BANK, MAX_BANK);
   state.bank = THREE.MathUtils.damp(state.bank, bankTarget * free, 8, dt);
   const flight = basis(heading, UP);
-  flight.multiply(tmpQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), state.bank));
+  flight.multiply(tmpQ.setFromAxisAngle(UP, state.bank));
   flight.multiply(tmpQ.setFromAxisAngle(X_AXIS, pitch));
   bf.group.quaternion.slerpQuaternions(state.rest.quat, flight, air);
   // The abdomen swings against the wings: up on the downstroke, down on the upstroke (monarch, Pieris).
@@ -511,7 +511,7 @@ renderer.setAnimationLoop(() => {
   sun.position.copy(bf.group.position).addScaledVector(sunDir, 0.7);
   // The wall answers only where the feet are: it builds up after touchdown, around the resting spot,
   // and dies away at take-off; nothing follows the butterfly in flight.
-  realRadius = THREE.MathUtils.damp(realRadius, state.mode === 'rest' ? 0.12 : 0, state.mode === 'rest' ? 2 : 5, dt);
+  realRadius = THREE.MathUtils.damp(realRadius, state.mode === 'rest' ? PLATFORM : 0, state.mode === 'rest' ? 2 : 5, dt);
   feet.centre.value.set(state.rest.pos.x, state.rest.pos.y);
   feet.radius.value = realRadius;
   space.update(dt);
