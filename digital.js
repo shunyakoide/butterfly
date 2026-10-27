@@ -1,65 +1,28 @@
-import * as THREE from 'three/webgpu';
-import { uniform, screenUV, screenSize, time, vec2, vec3, float, mix, step, smoothstep, max, min, hash, sqrt, equal, sin, cos, mrt } from 'three/tsl';
+import { uniform, screenUV, screenSize, time, vec2, vec3, mix, step, smoothstep, max, min, hash, sqrt, equal, sin, cos } from 'three/tsl';
 import { heat } from './fx.js';
 
 // The butterfly redrawn: a green dot-matrix dither, a blue halftone of big dots, black pixel marks
 // on white (a dot, a cross or a square per cell, by darkness), liquid chrome, a flickering hologram,
-// contour lines, a thermal camera, or a wireframe of its meshes. Only the butterfly's pixels change
+// contour lines or a thermal camera. Only the butterfly's pixels change
 // (a mask written by its materials in the scene pass); the print styles read the frame in square
 // cells at their centres, so their silhouette turns blocky. Separately, on take-off the butterfly
 // breaks into blocks that stream off sideways and thin out.
 
-export const STYLES = ['dots', 'halftone', 'pixels', 'chrome', 'holo', 'topo', 'thermal', 'wire'];
+export const STYLES = ['dots', 'halftone', 'pixels', 'chrome', 'holo', 'topo', 'thermal'];
 const CELL = { dots: [3, 3], halftone: [9, 9], pixels: [6, 6] }; // CSS px; the rest work per pixel
-const COLOUR = { dots: vec3(0.3, 1, 0.35), halftone: vec3(0.05, 0.35, 1), holo: vec3(0.25, 0.95, 1), wire: vec3(0.3, 0.85, 1) };
+const COLOUR = { dots: vec3(0.3, 1, 0.35), halftone: vec3(0.05, 0.35, 1), holo: vec3(0.25, 0.95, 1) };
 const SCATTER_TIME = 0.9; // s the take-off break-up lasts
 const brightness = (c) => max(c.r, max(c.g, c.b)); // the saturated blue reads dark in luminance
 
-export function buildDigital({ colour, smooth, mask, bf }) {
+export function buildDigital({ colour, smooth, mask }) {
   const dpr = uniform(1), scatter = uniform(0);
-
-  // The wireframe, seen through (no depth test) like an X-ray: the body's meshes (not the instanced
-  // hairs) as their triangles, and each wing as its outline, three smaller copies of it and its
-  // veins (its own mesh is a fine grid cut out by the texture's alpha, a blur of dots as wireframe). The lines write 0 to the mask, so the post pass keeps them while
-  // blacking out the butterfly around them.
-  const setUp = (m) => {
-    Object.assign(m, { transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending });
-    m.colorNode = COLOUR.wire.mul(0.35);
-    m.mrtNode = mrt({ mask: float(0) });
-    return m;
-  };
-  const meshWire = setUp(new THREE.MeshBasicNodeMaterial({ wireframe: true }));
-  const webWire = setUp(new THREE.LineBasicNodeMaterial());
-  const web = (wing) => {
-    const v = [];
-    const line = (pts, f = 1, loop = false) => pts.forEach((p, i) => {
-      const q = pts[i + 1] ?? (loop && pts[0]);
-      if (q) v.push(p.x * f, p.y * f, 0, q.x * f, q.y * f, 0);
-    });
-    for (const f of [0.25, 0.5, 0.75, 1]) line(wing.pts, f, true);
-    for (const vein of wing.veins) line(vein.pts);
-    return new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
-  };
-  const webs = bf.wings.map(web);
-  const wires = [];
-  bf.group.traverse((o) => {
-    if (!o.isMesh || o.isInstancedMesh || wires.includes(o)) return;
-    const wing = o.parent.userData.side;
-    if (wing && o !== o.parent.children[0]) return; // upper and under share a wing
-    const w = wing ? new THREE.LineSegments(webs[o.parent.userData.hind ? 1 : 0], webWire) : new THREE.Mesh(o.geometry, meshWire);
-    w.visible = false;
-    o.add(w);
-    wires.push(w);
-  });
 
   function print(base, style) {
     const P = screenUV.mul(screenSize); // physical px
     const cellPx = vec2(...(CELL[style] ?? [1, 1])).mul(dpr);
     const cell = P.div(cellPx).floor(), local = P.div(cellPx).fract();
     const uv = cell.add(0.5).mul(cellPx).div(screenSize);
-    // A 1 px wire line covers only some of a pixel's samples, so for the wireframe any pixel it
-    // touches at all stays.
-    const on = step(style === 'wire' ? 0.99 : 0.5, mask.sample(uv).r);
+    const on = step(0.5, mask.sample(uv).r);
     const c = colour.sample(uv).rgb;
     const t = smoothstep(0.02, 0.6, brightness(c));
     // The black-and-white styles take a softer ramp (power 0.7), so the shadowed wing keeps its steps too.
@@ -108,10 +71,8 @@ export function buildDigital({ colour, smooth, mask, bf }) {
       const level = (p) => brightness(smooth.sample(p.div(screenSize)).rgb).clamp(0, 1).pow(0.6).mul(10).floor();
       const l0 = level(P), edge = max(l0.notEqual(level(P.add(vec2(dpr, 0)))).select(1, 0), l0.notEqual(level(P.add(vec2(0, dpr)))).select(1, 0));
       out = vec3(0.01).add(vec3(0.85, 0.95, 1).mul(edge)).add(vec3(0.05, 0.12, 0.2).mul(l0.div(10)));
-    } else if (style === 'thermal') {
-      out = heat(brightness(c).clamp(0, 1).pow(0.6));
     } else {
-      out = vec3(0.004); // wire: the lines themselves come from the scene pass
+      out = heat(brightness(c).clamp(0, 1).pow(0.6)); // thermal
     }
     return mix(base, out, on);
   }
@@ -131,10 +92,6 @@ export function buildDigital({ colour, smooth, mask, bf }) {
     return scattered(style ? print(base, style) : base);
   }
 
-  function show(style) {
-    for (const w of wires) w.visible = style === 'wire';
-  }
-
   let prevMode = null, since = Infinity;
   function update(dt, mode) {
     dpr.value = Math.min(devicePixelRatio, 2);
@@ -144,5 +101,5 @@ export function buildDigital({ colour, smooth, mask, bf }) {
     scatter.value = since < SCATTER_TIME ? since / SCATTER_TIME : 0;
   }
 
-  return { apply, show, update };
+  return { apply, update };
 }

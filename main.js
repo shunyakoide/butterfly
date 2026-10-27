@@ -164,21 +164,20 @@ const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode() });
 overlay.toggle(params.get('fx') === 'on');
 
 // The butterfly as a screen print (digital.js): D steps through the styles and off, ?print=dots|
-// halftone|pixels|chrome|holo|topo|thermal|wire to start with one. The butterfly's materials always write a mask beside the colour
+// halftone|pixels|chrome|holo|topo|thermal to start with one. The butterfly's materials always write a mask beside the colour
 // (switching the scene pass's outputs at run time breaks the pipelines already built for the rest).
 scenePass.setMRT(mrt({ output, mask: float(0) }));
 scenePass.getTexture('mask').type = THREE.UnsignedByteType;
 const bfMask = mrt({ mask: float(1) });
 bf.group.traverse((o) => { if (o.isMesh) o.material.mrtNode = bfMask; });
-const digital = buildDigital({ colour, smooth: blurred.getTextureNode(), bf, mask: scenePass.getTextureNode('mask') });
-// Trails, landing rings and shed scales (motion.js), always on.
+const digital = buildDigital({ colour, smooth: blurred.getTextureNode(), mask: scenePass.getTextureNode('mask') });
+// Glowing scales shed from the wings (motion.js), always on.
 const motion = buildMotion({ scene, camera, bf });
 const chains = {};
 let printStyle = STYLES.includes(params.get('print')) ? params.get('print') : null;
 function setOutput() {
   // Each chain is built once (its bloom holds render targets).
   pipeline.outputNode = chains[printStyle] ??= film(vec4(overlay.apply(lens(digital.apply(sharp, printStyle)).rgb).mul(vignette), 1), float(0.12));
-  digital.show(printStyle);
   pipeline.needsUpdate = true;
 }
 setOutput();
