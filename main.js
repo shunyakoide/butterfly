@@ -6,7 +6,7 @@ import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberratio
 import { film } from 'three/addons/tsl/display/FilmNode.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { Butterfly, REST_HEIGHT } from './butterfly.js';
-import { morphoPattern, mutatePattern } from './pattern.js';
+import { morphoPattern } from './pattern.js';
 import { buildRift, VOID } from './rift.js';
 import { buildCircuit } from './circuit.js';
 import { buildGlass } from './glass.js';
@@ -252,8 +252,6 @@ function takeOff() {
 }
 
 function comeBack() {
-  bf.pattern = mutatePattern(bf.pattern);
-  bf.paint();
   // Land somewhere inside the middle of the current view, whatever the aspect ratio.
   ray.setFromCamera(new THREE.Vector2(rand(-0.5, 0.5), rand(-0.45, 0.45)), camera);
   // Off the wall's edge (onWall gives null), land in the middle instead: comeBack runs every frame
@@ -495,15 +493,15 @@ renderer.setAnimationLoop(() => {
   sun.position.copy(bf.group.position).addScaledVector(sunDir, 0.7);
   // The wall answers only where the feet are: it builds up after touchdown, around the resting spot,
   // and dies away at take-off; nothing follows the butterfly in flight.
-  const z = Math.abs(bf.group.position.z);
   realRadius = THREE.MathUtils.damp(realRadius, state.mode === 'rest' ? 0.12 : 0, state.mode === 'rest' ? 2 : 5, dt);
   rift.update(dt, state.rest.pos.x, state.rest.pos.y, realRadius);
   circuit.update(state.rest.pos.x, state.rest.pos.y, realRadius);
   glass.update(state.rest.pos.x, state.rest.pos.y, realRadius);
-  // Re-capture the environment when the sun turns, the wall has grown or shrunk, or the butterfly has
-  // moved: 1 cm near the wall, more further out, where the wall's share of the view changes slowly.
-  if (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.01 ||
-      bf.group.position.distanceTo(envAt.pos) > 0.01 + 0.25 * z) {
+  // Re-capture the environment (six renders of the surroundings and a blur, ~50-150 ms) only while the
+  // butterfly rests, when the sun turns, it has landed somewhere new or the wall around it has grown
+  // by a third; in flight it is small and quick, and the hitches showed while the lighting did not.
+  if (state.mode === 'rest' && (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.04 ||
+      bf.group.position.distanceTo(envAt.pos) > 0.01)) {
     envAt.sun.copy(sunDir);
     envAt.radius = realRadius;
     envAt.pos.copy(bf.group.position);
@@ -519,7 +517,7 @@ renderer.setAnimationLoop(() => {
 // Every half second the GPU time of all the frames since (the timestamp queries pile up until
 // resolved) is shown per frame, with the frame rate. window.app lets the console switch parts off to
 // see what they cost.
-if (perf) window.app = { renderer, pipeline, scene, scenePass, rift, circuit, glass, overlay, bf, outputs: { sharp, glowing, fringed } };
+if (perf) window.app = { renderer, pipeline, scene, camera, scenePass, rift, circuit, glass, overlay, bf, outputs: { sharp, glowing, fringed } };
 function showPerf() {
   perfAt.frames++;
   const now = performance.now();

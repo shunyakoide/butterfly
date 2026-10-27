@@ -20,23 +20,6 @@ export function morphoPattern(seed = Math.floor(Math.random() * 1e9)) {
   };
 }
 
-// "Slightly different": same species, shifted blue, border and underside.
-export function mutatePattern(p) {
-  const r = rng(p.seed + 1);
-  const j = (v, amt) => v + (r() - 0.5) * 2 * amt;
-  const c = THREE.MathUtils.clamp;
-  return {
-    seed: Math.floor(r() * 1e9),
-    hue: c(j(p.hue, 8), 190, 215),
-    light: c(j(p.light, 5), 40, 60),
-    black: c(j(p.black, 0.2), 0.05, 0.85),
-    apexSpots: c(Math.round(j(p.apexSpots, 1.4)), 1, 5),
-    underHue: c(j(p.underHue, 6), 15, 40),
-    eyes: c(j(p.eyes, 0.2), 0.6, 1.3),
-    wear: c(j(p.wear, 0.3), 0, 1),
-  };
-}
-
 // ---------- painting ----------
 
 const hsl = (h, s, l, a = 1) => `hsla(${h},${s}%,${l}%,${a})`;
