@@ -1,11 +1,11 @@
 import * as THREE from 'three/webgpu';
-import { pass, uniform, positionWorld, floor, fract, hash, sin, time, step, min, fwidth, smoothstep, mix, texture, vec2, vec3, vec4, float, normalMap } from 'three/tsl';
+import { pass, uniform } from 'three/tsl';
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Butterfly, REST_HEIGHT } from './butterfly.js';
 import { morphoPattern, mutatePattern } from './pattern.js';
-import { fbm } from './noise.js';
+import { buildRift, VOID } from './rift.js';
 
 // Units are meters. The wall is the z = 0 plane, facing +z.
 const HDRI = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/garden_nook_2k.hdr';
@@ -23,82 +23,20 @@ document.body.appendChild(renderer.domElement);
 await renderer.init();
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.01, 10);
+const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.01, 60); // far: the space behind the wall
 camera.position.set(0.1, -0.12, 0.25);
 camera.lookAt(0, 0.005, 0);
 
-// ---------- wall: painted plaster, all generated ----------
+// ---------- wall: lines around the butterfly, and the space behind (rift.js) ----------
 
-function plasterTextures(size, period) {
-  const h = new Float32Array(size * size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const u = x / size, v = y / size;
-      // Broad trowel waves + fine sand grit.
-      h[y * size + x] = 0.7 * fbm(u * period, v * period, 5, 3, period) + 0.3 * fbm(u * period * 16, v * period * 16, 2, 9, period * 16);
-    }
-  }
-  const nrm = new Uint8Array(size * size * 4), col = new Uint8Array(size * size * 4);
-  const at = (x, y) => h[((y + size) % size) * size + ((x + size) % size)];
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4;
-      const dx = (at(x + 1, y) - at(x - 1, y)) * 6, dy = (at(x, y + 1) - at(x, y - 1)) * 6;
-      const l = Math.hypot(dx, dy, 1);
-      nrm[i] = (-dx / l * 0.5 + 0.5) * 255; nrm[i + 1] = (-dy / l * 0.5 + 0.5) * 255; nrm[i + 2] = (1 / l * 0.5 + 0.5) * 255; nrm[i + 3] = 255;
-      const stain = fbm(x / size * period * 0.5, y / size * period * 0.5, 4, 17, period * 0.5);
-      const c = 0.9 + 0.08 * at(x, y) - 0.06 * stain;
-      col[i] = c * 236; col[i + 1] = c * 228; col[i + 2] = c * 214; col[i + 3] = 255;
-    }
-  }
-  const tex = (data, cs) => {
-    const t = new THREE.DataTexture(data, size, size);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.colorSpace = cs;
-    t.generateMipmaps = true;
-    t.minFilter = THREE.LinearMipmapLinearFilter;
-    t.magFilter = THREE.LinearFilter;
-    t.anisotropy = 8;
-    t.needsUpdate = true;
-    return t;
-  };
-  return { normal: tex(nrm, THREE.NoColorSpace), color: tex(col, THREE.SRGBColorSpace) };
+const rift = buildRift();
+scene.add(rift.wall, rift.space);
+// Where the wall was: 1.6 m square, for picking points on it (most of it is no longer drawn).
+const wallPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+function onWall() {
+  const p = ray.ray.intersectPlane(wallPlane, new THREE.Vector3());
+  return p && Math.abs(p.x) < 0.8 && Math.abs(p.y) < 0.8 ? p : null;
 }
-
-const plaster = plasterTextures(1024, 4);
-
-// Only the wall around the butterfly is real. Further out it comes apart into 4 mm cells that hold
-// one flat plaster colour each, and beyond that into a dark surface ruled with a faintly glowing
-// grid: the data the real wall is resolved from. Cells cross over at slightly different, flickering
-// distances, so the boundary reads as cells switching, not a fade. The glow is a real light source:
-// the butterfly's environment capture sees it and the blue reflects it.
-const real = { centre: uniform(new THREE.Vector2()), radius: uniform(0) };
-const CELL = 0.004, GRID = 0.012, LINE = 0.0003, EDGE = 0.04; // m; EDGE: width of the cell stage
-const wallMaterial = (() => {
-  const p = positionWorld.xy;
-  const toUV = (q) => q.div(1.6).add(0.5).mul(5); // the plane is 1.6 m; plaster repeats 5 times
-  const cell = floor(p.div(CELL));
-  const h = hash(cell.x.add(cell.y.mul(613)));
-  const d = cell.add(0.5).mul(CELL).sub(real.centre).length();
-  const t = d.sub(real.radius).div(EDGE).add(h.sub(0.5).mul(0.6)).add(sin(time.mul(1.5).add(h.mul(6.283))).mul(0.12));
-  const isCell = step(0, t), isGrid = step(1, t);
-  // Grid lines, anti-aliased and dimmed once thinner than a pixel.
-  const lines = (size, width) => {
-    const f = fract(p.div(size)), e = min(min(f.x, f.y), min(f.x.oneMinus(), f.y.oneMinus())).mul(size);
-    const aa = fwidth(p.x).max(1e-6);
-    return smoothstep(width.mul(0.5).add(aa), width.mul(0.5), e).mul(width.div(aa).min(1));
-  };
-  const m = new THREE.MeshPhysicalNodeMaterial({ roughness: 0.92 });
-  const plasterAt = (q) => texture(plaster.color, toUV(q)).rgb;
-  m.colorNode = mix(mix(plasterAt(p), plasterAt(cell.add(0.5).mul(CELL)), isCell), vec3(0.02, 0.024, 0.03), isGrid);
-  // Relief only where the wall is real; cells and grid are flat.
-  m.normalNode = normalMap(mix(texture(plaster.normal, toUV(p)), vec4(0.5, 0.5, 1, 1), isCell), vec2(0.6, 0.6));
-  m.emissiveNode = vec3(0.45, 0.8, 1).mul(lines(GRID, float(LINE)).mul(isGrid).mul(0.5).add(lines(CELL, float(LINE * 0.6)).mul(isCell.sub(isGrid)).mul(0.25)));
-  return m;
-})();
-const wall = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), wallMaterial);
-wall.receiveShadow = true;
-scene.add(wall);
 
 // ---------- light ----------
 
@@ -140,29 +78,22 @@ const hdr = await new HDRLoader().loadAsync(HDRI);
 hdr.mapping = THREE.EquirectangularReflectionMapping;
 const hdrSunAz = removeSun(hdr);
 const ENV = 0.45;
-// Seen past the wall's edge at grazing camera angles: the garden, out of focus.
-scene.background = hdr;
-scene.backgroundBlurriness = 0.4;
-scene.backgroundIntensity = ENV;
+// Everything the camera sees past the wall is the space behind it (see rift.js).
+scene.background = new THREE.Color(VOID);
 scene.environmentIntensity = ENV;
 
-// The butterfly sits a few mm from a wall that hides half the sky and throws back sunlit plaster
-// and the grid's glow, so its environment is captured from where it is, in a scene with just the
-// sky, the same wall and the same sun (no shadows needed: nothing in it casts any).
+// The butterfly sits a few mm from the wall: the sky is only in front, behind is dark but for the
+// glowing lines. So its environment is captured from where it is, in a scene with just the sky and
+// the line wall.
 const pmrem = new THREE.PMREMGenerator(renderer);
 const envScene = new THREE.Scene();
 envScene.background = hdr;
-// Pre-filtered here: left to the renderer, it would be filtered in the middle of the capture.
-envScene.environment = pmrem.fromEquirectangular(hdr).texture;
-const envSun = new THREE.DirectionalLight(sun.color, sun.intensity / ENV); // /ENV: the capture is scaled by ENV again
-const envWall = new THREE.Mesh(wall.geometry, wallMaterial);
-envScene.add(envSun, envWall);
+envScene.add(rift.envWall);
 let envTarget = null;
 function captureEnvironment(pos) {
   const rot = sunAngles.az - hdrSunAz;
-  for (const e of [scene.backgroundRotation, envScene.backgroundRotation, envScene.environmentRotation]) e.y = rot;
-  envSun.position.copy(sunDir);
-  envTarget = pmrem.fromScene(envScene, 0, 0.001, 20, { size: 128, position: pos, renderTarget: envTarget });
+  envScene.backgroundRotation.y = rot;
+  envTarget = pmrem.fromScene(envScene, 0, 0.001, 40, { size: 128, position: pos, renderTarget: envTarget });
   scene.environment = envTarget.texture;
 }
 
@@ -202,8 +133,8 @@ function restPose(x, y, heading) {
 // Points chosen through the current view, so the flight crosses the frame wherever the camera is.
 function throughView(x, y, off) {
   ray.setFromCamera(new THREE.Vector2(x, y), camera);
-  const hit = ray.intersectObject(wall)[0];
-  return hit ? hit.point.addScaledVector(WALL_N, off) : ray.ray.at(0.4, new THREE.Vector3());
+  const hit = onWall();
+  return hit ? hit.addScaledVector(WALL_N, off) : ray.ray.at(0.4, new THREE.Vector3());
 }
 // Just outside the frame, to one side or the top.
 function offscreenPoint() {
@@ -275,7 +206,7 @@ function comeBack() {
   bf.paint();
   // Land somewhere inside the middle of the current view, whatever the aspect ratio.
   ray.setFromCamera(new THREE.Vector2(rand(-0.5, 0.5), rand(-0.45, 0.45)), camera);
-  const spot = ray.intersectObject(wall)[0].point;
+  const spot = onWall();
   state.rest = restPose(spot.x, spot.y, deg(rand(40, 140)));
   const p = state.rest.pos;
   startJourney('landing', [
@@ -405,8 +336,8 @@ const ndc = new THREE.Vector2();
 function hitsButterfly(e) {
   ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  const hit = ray.intersectObject(wall)[0];
-  return hit && hit.point.distanceTo(state.rest.pos) < 0.035;
+  const hit = onWall();
+  return hit && hit.distanceTo(state.rest.pos) < 0.035;
 }
 // Drag orbits the camera, Shift+drag moves the sun, and a tap (no drag) touches the butterfly.
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -461,6 +392,7 @@ addEventListener('resize', () => {
 const clock = new THREE.Clock();
 // ?slow=0.1 plays time slower, for watching the wingbeats.
 const timeScale = +(params.get('slow') ?? 1);
+let realRadius = 0;
 const envAt = { sun: new THREE.Vector3(), pos: new THREE.Vector3(0, 0, -1), radius: 0 };
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 1 / 30) * timeScale;
@@ -473,18 +405,18 @@ renderer.setAnimationLoop(() => {
   // Keep the butterfly in focus wherever it is.
   sun.target.position.copy(bf.group.position);
   sun.position.copy(bf.group.position).addScaledVector(sunDir, 0.7);
-  // Reality follows the butterfly: whole around it on the wall, shrinking as it flies out, gone
-  // while it's away (and grown back in when it returns).
+  // The wall follows the butterfly: whole around it when it rests, shrinking as it flies out, gone
+  // while it's away (and built back up when it returns).
   const z = Math.abs(bf.group.position.z);
-  const realTarget = bf.group.visible ? 0.075 * (1 - THREE.MathUtils.smoothstep(z, 0.03, 0.35)) : 0;
-  real.radius.value = THREE.MathUtils.damp(real.radius.value, realTarget, 2, dt);
-  real.centre.value.set(bf.group.position.x, bf.group.position.y);
-  // Re-capture the environment when the sun turns, the real patch has changed, or the butterfly has
+  const realTarget = bf.group.visible ? 0.12 * (1 - THREE.MathUtils.smoothstep(z, 0.03, 0.35)) : 0;
+  realRadius = THREE.MathUtils.damp(realRadius, realTarget, 2, dt);
+  rift.update(dt, bf.group.position.x, bf.group.position.y, realRadius);
+  // Re-capture the environment when the sun turns, the wall has grown or shrunk, or the butterfly has
   // moved: 1 cm near the wall, more further out, where the wall's share of the view changes slowly.
-  if (!sunDir.equals(envAt.sun) || Math.abs(real.radius.value - envAt.radius) > 0.005 ||
+  if (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.01 ||
       bf.group.position.distanceTo(envAt.pos) > 0.01 + 0.25 * z) {
     envAt.sun.copy(sunDir);
-    envAt.radius = real.radius.value;
+    envAt.radius = realRadius;
     envAt.pos.copy(bf.group.position);
     captureEnvironment(envAt.pos.clone().setZ(Math.max(envAt.pos.z, 0.003)));
   }
