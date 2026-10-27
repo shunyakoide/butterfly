@@ -182,14 +182,16 @@ export function buildBody() {
     const u = new THREE.Vector3(r() * 2 - 1, r() * 2 - 1, r() * 2 - 1).normalize();
     if (Math.abs(u.x) > 0.45) return null; // the eyes cover the sides
     const p = HEAD.clone().addScaledVector(u, 0.0019);
-    const dir = u.clone().add(new THREE.Vector3(0, 0.4, 0.2));
+    // Combed forward over the head, as on the thorax, lifting a little at the front.
+    const dir = new THREE.Vector3(0, 1, 0).projectOnPlane(u).normalize().addScaledVector(u, 0.5)
+      .addScaledVector(new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5), 0.25);
     const pale = u.y > 0.5 && u.z < 0.2;
     return { p, dir, len: 0.0006 * (0.6 + r() * 0.6), width: 0.00003, color: pale ? hsl(40, 25, 70) : hsl(24, 25, 10 + r() * 8) };
   }, hairMat));
 
   // Compound eyes: glossy navy-black, faceted, each in a ring of pale scales.
   const eyeMat = new THREE.MeshPhysicalMaterial({ color: 0x0a0f1e, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08, normalMap: ommatidiaNormals(), normalScale: new THREE.Vector2(0.6, 0.6) });
-  const ringMat = new THREE.MeshPhysicalMaterial({ color: 0xd9d0bb, roughness: 0.8, sheen: 1, sheenColor: 0xffffff });
+  const ringMat = new THREE.MeshPhysicalMaterial({ color: 0x9c9282, roughness: 0.8, sheen: 0.3, sheenColor: 0xffffff });
   for (const s of [-1, 1]) {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0015, 32, 20), eyeMat);
     eye.position.set(s * 0.0011, HEAD.y + 0.0003, HEAD.z + 0.0002);
@@ -201,24 +203,28 @@ export function buildBody() {
       if (n.x * s < 0) n.x = -n.x; // outer half only
       return { p: n.clone().multiplyScalar(0.0015).add(eye.position), dir: n, len: 0.00018 * (0.6 + r() * 0.6), width: 0.000012, color: hsl(30, 15, 25 + r() * 20) };
     }, hairMat));
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.00125, 0.00016, 8, 32), ringMat);
+    // A narrow band of scales round the eye's rim, ~60 µm (est., photos); thicker read as a white frame.
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.00133, 0.00006, 6, 40), ringMat);
     ring.position.set(s * 0.00175, HEAD.y + 0.0003, HEAD.z + 0.0002);
     ring.rotation.y = Math.PI / 2;
     g.add(ring);
   }
 
-  // Labial palps: upturned in front of the face, red outside, white on the inner face.
+  // Labial palps: a pair pressed together in front of the face like a beak, jutting forward and
+  // turning up to about the top of the eyes (photos); red outside, white on the inner face.
   for (const s of [-1, 1]) {
-    const pts = [[s * 0.0005, HEAD.y + 0.0006, HEAD.z - 0.0016], [s * 0.0008, HEAD.y + 0.0022, HEAD.z - 0.0012],
-      [s * 0.0008, HEAD.y + 0.0033, HEAD.z + 0.0002], [s * 0.0005, HEAD.y + 0.0036, HEAD.z + 0.0018]];
-    const geo = taperTube(pts, (t) => 0.00038 * (1 - 0.55 * t), (t, n) => (n.x * s > 0.1 ? hsl(355, 45, 40 + 10 * t) : hsl(40, 15, 88)));
+    const pts = [[s * 0.00035, HEAD.y + 0.0008, HEAD.z - 0.0014], [s * 0.00045, HEAD.y + 0.0021, HEAD.z - 0.0009],
+      [s * 0.0004, HEAD.y + 0.0031, HEAD.z + 0.0001], [s * 0.0003, HEAD.y + 0.0035, HEAD.z + 0.0008]];
+    const radius = (t) => 0.00034 * (1 - 0.55 * t);
+    const color = (n) => (n.x * s > 0.1 ? hsl(355, 45, 42) : hsl(40, 18, 72));
+    const geo = taperTube(pts, radius, (t, n) => color(n));
     g.add(new THREE.Mesh(geo, tubeMat));
     const curve = geo.userData.curve;
-    g.add(hairs(160, () => {
-      const t = r(), p = curve.getPointAt(t), tan = curve.getTangentAt(t);
-      const side = new THREE.Vector3(s, 0, 0).addScaledVector(tan, -tan.x * s).normalize();
-      return { p: p.addScaledVector(side, 0.0002), dir: tan.clone().addScaledVector(side, 0.8), len: 0.0004 * (0.6 + r() * 0.6), width: 0.000025,
-        color: r() < 0.6 ? hsl(355, 40, 45) : hsl(40, 15, 88) };
+    // Densely scaled: short scales all round the surface, lying forward along the palp.
+    g.add(hairs(420, () => {
+      const t = r(), tan = curve.getTangentAt(t);
+      const n = new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).projectOnPlane(tan).normalize();
+      return { p: curve.getPointAt(t).addScaledVector(n, radius(t)), dir: tan.clone().addScaledVector(n, 0.5), len: 0.0003 * (0.6 + r() * 0.6), width: 0.000025, color: color(n) };
     }, hairMat));
   }
 
