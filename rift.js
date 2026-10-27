@@ -86,10 +86,9 @@ export function buildRift(camera) {
   const lineMaterial = new THREE.LineBasicNodeMaterial();
   lineMaterial.positionNode = around(select(dot, 0.3, 1)).add(vec3(0, 0, sink.negate().add(g.z.mul(length))));
   const top = g.z.add(1); // 1 at the tops, 0 at the feet: posts fade into the dark
-  const fade = smoothstep(radius.max(0.06).mul(2.5), radius.max(0.06).mul(4.5), d).oneMinus();
   // A faint ring sweeping out from the butterfly now and then.
   const ring = exp(d.sub(fract(time.mul(0.15)).mul(radius).mul(1.6)).div(0.004).pow(2).negate()).mul(0.8);
-  lineMaterial.colorNode = mix(new THREE.Color(VOID), vec3(0.35, 0.75, 1).mul(ring.add(0.7)), top.mul(0.75).add(0.25).mul(fade).mul(exp(sink.mul(-8))));
+  lineMaterial.colorNode = mix(new THREE.Color(VOID), vec3(0.35, 0.75, 1).mul(ring.add(0.7)), top.mul(0.75).add(0.25).mul(exp(sink.mul(-8))));
   const lines = new THREE.LineSegments(undefined, lineMaterial);
   lines.frustumCulled = false;
   const envLines = new THREE.LineSegments(undefined, lineMaterial);
@@ -98,7 +97,7 @@ export function buildRift(camera) {
   const faceMaterial = new THREE.MeshBasicNodeMaterial();
   faceMaterial.positionNode = around(select(filled, 1, 0)).add(vec3(0, 0, sink.negate().sub(0.0002)));
   const shade = hash(key.add(600000)).mul(0.5).add(0.3);
-  faceMaterial.colorNode = mix(new THREE.Color(VOID), vec3(0.2, 0.5, 0.8).mul(ring.add(0.7)).mul(shade), fade.mul(exp(sink.mul(-8))));
+  faceMaterial.colorNode = mix(new THREE.Color(VOID), vec3(0.2, 0.5, 0.8).mul(ring.add(0.7)).mul(shade), exp(sink.mul(-8)));
   const faces = new THREE.Mesh(undefined, faceMaterial);
   faces.frustumCulled = false;
   const envFaces = new THREE.Mesh(undefined, faceMaterial);
