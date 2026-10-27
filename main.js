@@ -76,6 +76,8 @@ scene.add(wall);
 
 // ---------- light ----------
 
+// 2.6 is ~6.4x the HDRI sky's irradiance on a horizontal surface (0.905 x ENV): within a clear day's
+// direct/diffuse ratio of ~5-10, so sun and sky agree with no clipped HDRI sun to measure against.
 const sun = new THREE.DirectionalLight(0xfff0dc, 2.6);
 sun.position.set(-0.25, 0.35, 0.6);
 sun.castShadow = true;
