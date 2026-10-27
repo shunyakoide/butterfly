@@ -47,7 +47,10 @@ function onWall() {
 // 2.6 is ~6.4x the HDRI sky's irradiance on a horizontal surface (0.905 x ENV): within a clear day's
 // direct/diffuse ratio of ~5-10, so sun and sky agree with no clipped HDRI sun to measure against.
 const sun = new THREE.DirectionalLight(0xfff0dc, 2.6);
-sun.position.set(-0.25, 0.35, 0.6);
+// From the side, opposite the camera (az -65°, el 40°): the dust between camera and wall scatters it
+// forward and shows, and the blue gets the oblique light that whitens one side. From near the
+// camera, as before, the dust was all but invisible.
+sun.position.set(Math.sin(deg(-65)) * Math.cos(deg(40)), Math.sin(deg(40)), Math.cos(deg(-65)) * Math.cos(deg(40)));
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -0.25, right: 0.25, top: 0.25, bottom: -0.25, near: 0.05, far: 2 });
