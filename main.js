@@ -235,7 +235,9 @@ function comeBack() {
   bf.paint();
   // Land somewhere inside the middle of the current view, whatever the aspect ratio.
   ray.setFromCamera(new THREE.Vector2(rand(-0.5, 0.5), rand(-0.45, 0.45)), camera);
-  const spot = onWall();
+  // Off the wall's edge (onWall gives null), land in the middle instead: comeBack runs every frame
+  // until it succeeds, so a throw here froze the butterfly while repainting its wings each frame.
+  const spot = onWall() ?? new THREE.Vector3();
   state.rest = restPose(spot.x, spot.y, deg(rand(40, 140)));
   const p = state.rest.pos;
   startJourney('landing', [
