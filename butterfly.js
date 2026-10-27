@@ -52,7 +52,9 @@ export class Butterfly {
     this.group.scale.setScalar(SCALE);
 
     this.wings = [FORE, HIND];
-    const geos = this.wings.map(wingGeometry);
+    // Hinges below: fore at y 1.2 mm, hind at -0.8 mm, so the hindwing's points sit 2 mm further
+    // back in the forewing's frame.
+    const geos = [wingGeometry(FORE), wingGeometry(HIND, FORE, new THREE.Vector2(0, -0.002))];
     this.pivots = [];
     for (const side of [1, -1]) {
       [[0, [0.0012, 0.0012, 0.0011]], [1, [0.0012, -0.0008, 0.0005]]].forEach(([k, pos]) => {

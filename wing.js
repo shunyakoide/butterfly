@@ -136,7 +136,11 @@ function relief(p, wing, isInside) {
 // A regular grid over the wing's bounds, so it can bend smoothly. The outline is cut by the
 // colour texture's alpha (alphaTest / alphaToCoverage), which keeps the edge pixel-exact.
 // (Earcut with Steiner points made sliver triangles that banded across the wing.)
-export function wingGeometry(wing) {
+// over: the wing lying on top of this one where they overlap (the forewing over the hindwing's
+// humeral lobe), with shift taking this wing's coordinates into its. Under it, this wing is pressed
+// 0.3 mm below its surface (and eased back over 3 mm beyond its edge), since the camber would
+// otherwise push this wing up through it.
+export function wingGeometry(wing, over = null, shift = new THREE.Vector2()) {
   const step = 0.001;
   const box = new THREE.Box2().setFromPoints(wing.pts).expandByScalar(0.0015);
   const size = box.getSize(new THREE.Vector2()), centre = box.getCenter(new THREE.Vector2());
@@ -145,7 +149,13 @@ export function wingGeometry(wing) {
   const pos = geo.attributes.position, uv = geo.attributes.uv, p = new THREE.Vector2();
   for (let i = 0; i < pos.count; i++) {
     p.set(pos.getX(i), pos.getY(i));
-    pos.setZ(i, relief(p, wing, inside(p, wing.pts)));
+    let z = relief(p, wing, inside(p, wing.pts));
+    if (over) {
+      const q = p.clone().add(shift), isUnder = inside(q, over.pts);
+      const reach = isUnder ? 1 : 1 - smoothstep(Math.min(...over.pts.map((o) => o.distanceTo(q))), 0, 0.003);
+      if (reach > 0) z = THREE.MathUtils.lerp(z, Math.min(z, relief(q, over, isUnder) - 0.0003), reach);
+    }
+    pos.setZ(i, z);
     uv.setXY(i, (p.x - BOX.x0) / BOX.size, (p.y - BOX.y0) / BOX.size);
   }
   geo.computeVertexNormals();
