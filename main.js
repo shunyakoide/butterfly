@@ -9,6 +9,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Butterfly, REST_HEIGHT } from './butterfly.js';
 import { morphoPattern, mutatePattern } from './pattern.js';
 import { buildRift, VOID } from './rift.js';
+import { buildDust } from './dust.js';
 
 // Units are meters. The wall is the z = 0 plane, facing +z.
 const HDRI = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/garden_nook_2k.hdr';
@@ -56,6 +57,8 @@ sun.shadow.radius = 3;
 scene.add(sun, sun.target);
 // The shadow camera covers only ±25 cm, so the light follows the butterfly (see the loop).
 const sunDir = sun.position.clone().normalize();
+const dust = buildDust(sunDir, sun.color);
+scene.add(dust.mesh);
 
 // ---------- environment: the garden HDRI as seen from the butterfly, wall included ----------
 
@@ -420,6 +423,7 @@ renderer.setAnimationLoop(() => {
   const realTarget = bf.group.visible ? 0.12 * (1 - THREE.MathUtils.smoothstep(z, 0.03, 0.35)) : 0;
   realRadius = THREE.MathUtils.damp(realRadius, realTarget, 2, dt);
   rift.update(dt, bf.group.position.x, bf.group.position.y, realRadius);
+  dust.update(dt, bf.group.position);
   // Re-capture the environment when the sun turns, the wall has grown or shrunk, or the butterfly has
   // moved: 1 cm near the wall, more further out, where the wall's share of the view changes slowly.
   if (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.01 ||
