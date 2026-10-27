@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { fbm, rng } from './noise.js';
 
 // The body of M. peleides, in model meters (the butterfly is drawn at 1/1.3 size).
@@ -254,31 +255,47 @@ export function buildBody() {
   g.userData.antennae = antennae;
 
   // ---------- legs ----------
-  // Nymphalids walk on four legs. Each: coxa under the thorax, femur out and slightly up, tibia
-  // down to the wall, tarsus resting on it, with dark spines and a pair of claws.
-  // Silvery grey, paler toward the feet (side photo photo-1651940397966), with pale joint bands.
-  const legColor = (t) => (Math.abs(t - 0.38) < 0.02 || Math.abs(t - 0.72) < 0.02 ? hsl(40, 8, 85) : hsl(30, 6, 52 + 18 * t));
+  // Nymphalids walk on four legs.
+  // Silvery grey, paler toward the feet (side photo photo-1651940397966).
+  const legColor = (l) => () => hsl(30, 6, l);
   const spineMat = new THREE.MeshPhysicalMaterial({ color: 0x1a120c, roughness: 0.5 });
+  const jointMat = new THREE.MeshPhysicalMaterial({ color: hsl(30, 6, 54), roughness: 0.7 });
+  const V = (a) => new THREE.Vector3(...a);
+  // All the segments go into one mesh and all the joints into one instanced mesh, so the jointed
+  // legs cost two draws, not one per segment.
+  const legTubes = [], joints = [];
+  // One straight segment of a leg, tapering from r0 to r1, rounded off at its far joint.
+  const segment = (a, b, r0, r1, l, next = r1) => {
+    legTubes.push(taperTube([a, b], (t) => r0 + (r1 - r0) * t, legColor(l), { seg: 4, radial: 8 }));
+    joints.push(new THREE.Matrix4().compose(V(b), new THREE.Quaternion(), new THREE.Vector3().setScalar(Math.min(r1, next))));
+  };
   for (const s of [-1, 1]) {
     // reach scales the footprint so mid/hind legs are ~0.32/0.34 x forewing, as measured on a side photo
     // (mid tibia+tarsus 0.20, hind femur 0.13 x forewing).
     for (const [y0, dy, reach] of [[0.0006, 0.0042, 1.65], [-0.0014, -0.0058, 1.5]]) {
-      const pts = [[0.0011, 0, -0.0022], [0.003, dy * 0.15, -0.0018], [0.0058, dy * 0.42, -0.0008],
-        [0.0072, dy * 0.75, -0.0026], [0.0078, dy * 0.95, -LEG_DROP + 0.00015], [0.0084, dy * 1.3, -LEG_DROP + 0.0001]]
-        .map(([x, y, z]) => [s * (0.0011 + (x - 0.0011) * reach), y0 + y * reach, z]);
-      const radius = (t) => (t < 0.38 ? 0.00024 : t < 0.72 ? 0.00017 : 0.00011) * (1 - 0.3 * THREE.MathUtils.smoothstep(t, 0.9, 1));
-      const geo = taperTube(pts, radius, legColor, { seg: 64, radial: 8 });
-      g.add(new THREE.Mesh(geo, tubeMat));
-      const curve = geo.userData.curve;
+      const at = ([x, y, z]) => [s * (0.0011 + (x - 0.0011) * reach), y0 + y * reach, z];
+      // Coxa under the thorax; femur out and up to a sharp knee; tibia straight down to the wall;
+      // the tarsus along it in five tarsomeres, the first as long as the other four (est., from
+      // nymphalid leg diagrams), ending in a pair of claws.
+      const coxa = at([0.0011, 0, -0.0022]), troch = at([0.0026, dy * 0.12, -0.0019]);
+      const knee = at([0.0058, dy * 0.42, -0.0006]), ankle = at([0.0074, dy * 0.85, -LEG_DROP + 0.00012]);
+      const tip = at([0.0084, dy * 1.3, -LEG_DROP + 0.00008]);
+      segment(coxa, troch, 0.00026, 0.00024, 48);
+      segment(troch, knee, 0.00024, 0.0002, 55, 0.00017);
+      segment(knee, ankle, 0.00017, 0.00014, 62, 0.00011);
+      const tars = [0, 0.5, 0.625, 0.75, 0.875, 1].map((f) => V(ankle).lerp(V(tip), f).toArray());
+      for (let k = 0; k < 5; k++) segment(tars[k], tars[k + 1], 0.00011 - k * 0.000006, 0.000105 - k * 0.000006, 66 + k * 2);
       // Spines on the tibia and tarsus, pointing down and back along the leg.
+      const tibia = [V(knee), V(ankle)], tarsus = [V(ankle), V(tip)];
       g.add(hairs(26, (i) => {
-        const t = 0.42 + (i / 26) * 0.55, p = curve.getPointAt(t), tan = curve.getTangentAt(t);
-        return { p, dir: tan.clone().add(new THREE.Vector3(0, 0, -0.7)).add(new THREE.Vector3(s * (r() - 0.5), 0, 0)), len: 0.00028, width: 0.00003, color: hsl(20, 30, 8) };
+        const [a, b] = i < 14 ? tibia : tarsus, f = i < 14 ? (i + 0.5) / 14 : (i - 13.5) / 12;
+        const tan = b.clone().sub(a).normalize();
+        return { p: a.clone().lerp(b, f), dir: tan.add(new THREE.Vector3(0, 0, -0.7)).add(new THREE.Vector3(s * (r() - 0.5), 0, 0)), len: 0.00028, width: 0.00003, color: hsl(20, 30, 8) };
       }, spineMat));
-      // Claws.
+      // Claws, hooked down into the wall.
       g.add(hairs(2, (i) => {
-        const p = curve.getPointAt(1), tan = curve.getTangentAt(1);
-        return { p, dir: tan.clone().add(new THREE.Vector3((i - 0.5) * 0.8, 0, -0.6)), len: 0.00025, width: 0.00004, color: hsl(20, 30, 6) };
+        const tan = V(tip).sub(V(ankle)).normalize();
+        return { p: V(tip), dir: tan.add(new THREE.Vector3((i - 0.5) * 0.8, 0, -0.6)), len: 0.00025, width: 0.00004, color: hsl(20, 30, 6) };
       }, spineMat));
     }
     // Forelegs: small, folded against the chest, covered in long pale hair (the "brush").
@@ -290,5 +307,9 @@ export function buildBody() {
       return { p, dir: new THREE.Vector3((r() - 0.5) + s * 0.5, 0.3, -0.8 + r() * 0.4), len: 0.0007 * (0.6 + r() * 0.6), width: 0.00003, color: hsl(40, 25, 60 + r() * 15) };
     }, hairMat));
   }
+  g.add(new THREE.Mesh(mergeGeometries(legTubes), tubeMat));
+  const knobs = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), jointMat, joints.length);
+  joints.forEach((m, i) => knobs.setMatrixAt(i, m));
+  g.add(knobs);
   return g;
 }
