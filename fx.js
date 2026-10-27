@@ -26,6 +26,21 @@ function anchorsOf(bf) {
   return list;
 }
 
+// What the insets magnify: points in the blue middle of each wing, 10-40% of the way from its centre
+// (the outline's mean) to its edge; at the edge there is little but the dark border and fringe hairs.
+function blueSpots(bf) {
+  const list = [];
+  bf.pivots.forEach((p) => {
+    const mesh = p.children[0], pts = bf.wings[p.userData.hind ? 1 : 0].pts;
+    const c = pts.reduce((m, q) => m.add(q), new THREE.Vector2()).divideScalar(pts.length);
+    for (let k = 0; k < 6; k++) {
+      const e = pts[Math.floor((k + 0.5) / 6 * pts.length)], f = 0.1 + 0.3 * Math.random();
+      list.push({ obj: mesh, local: new THREE.Vector3(c.x + (e.x - c.x) * f, c.y + (e.y - c.y) * f, 0) });
+    }
+  });
+  return list;
+}
+
 const num = () => (Math.random() < 0.3 ? (Math.random() * 3000 - 500).toFixed(3) : (Math.random() * 200 - 100).toFixed(Math.random() < 0.5 ? 4 : 6));
 
 export function buildOverlay({ camera, bf, frame }) {
@@ -33,7 +48,7 @@ export function buildOverlay({ camera, bf, frame }) {
   Object.assign(canvas.style, { position: 'fixed', inset: '0', pointerEvents: 'none' });
   document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
-  const anchors = anchorsOf(bf);
+  const anchors = anchorsOf(bf), spots = blueSpots(bf);
   // Each anchor joins its two nearest on screen; some carry a number, some a small empty box.
   const decor = anchors.map(() => ({ label: Math.random() < 0.6 ? num() : null, box: Math.random() < 0.35 }));
   let enabled = false;
@@ -74,10 +89,11 @@ export function buildOverlay({ camera, bf, frame }) {
     if (!show) return;
 
     bf.group.updateMatrixWorld();
-    const pts = anchors.map((a) => {
+    const toScreen = (a) => {
       v.copy(a.local); a.obj.localToWorld(v); v.project(camera);
       return { x: (v.x * 0.5 + 0.5) * w, y: (0.5 - v.y * 0.5) * h };
-    });
+    };
+    const pts = anchors.map(toScreen), targets = spots.map(toScreen);
     if (t > nextNumbers) { nextNumbers = t + 0.25; for (const d of decor) if (d.label && Math.random() < 0.3) d.label = num(); }
 
     ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 0.75;
@@ -109,8 +125,8 @@ export function buildOverlay({ camera, bf, frame }) {
     const size = Math.min(w, h) * 0.24;
     insets.forEach((s, i) => {
       s.t += dt;
-      if (s.t > INSET_HOLD) { s.t = 0; s.anchor = Math.floor(Math.random() * pts.length); s.alpha.value = 0; }
-      const a = pts[s.anchor];
+      if (s.t > INSET_HOLD) { s.t = 0; s.anchor = Math.floor(Math.random() * targets.length); s.alpha.value = 0; }
+      const a = targets[s.anchor];
       const side = i === 0 ? -1 : 1;
       const cx = THREE.MathUtils.clamp(a.x + side * size * 1.1, size / 2 + 12, w - size / 2 - 12);
       const cy = THREE.MathUtils.clamp(a.y + (i === 0 ? -0.6 : 0.6) * size, size / 2 + 40, h - size / 2 - 40);
