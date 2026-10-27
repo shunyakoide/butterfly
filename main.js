@@ -18,7 +18,7 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 0.75;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap; // WebGPU has no PCFSoft; shadow.radius softens
 document.body.appendChild(renderer.domElement);
 await renderer.init();
 
@@ -88,14 +88,55 @@ scene.add(sun, sun.target);
 // The shadow camera covers only ±25 cm, so the light follows the butterfly (see the loop).
 const sunDir = sun.position.clone().normalize();
 
+// ---------- environment: the garden HDRI as seen from the butterfly, wall included ----------
+
+// The HDRI's sun is clipped at the half-float max (65504) and sits in another direction from our
+// shadow-casting sun: left in, it lights the butterfly a second time, shadowless. Scale it (and its
+// aureole) down to the brightest sky (99.9th percentile ~3.3) and return its azimuth, measured
+// like sunAngles.az, so the sky can be turned to put its bright side behind our sun.
+function removeSun(tex, cap = 4) {
+  console.assert(tex.type === THREE.HalfFloatType);
+  const { data, width } = tex.image, { fromHalfFloat: f, toHalfFloat: h } = THREE.DataUtils;
+  let best = 0, at = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const c = [0, 1, 2].map((k) => Math.min(f(data[i + k]), 65504)); // clipped texels may be Inf
+    const L = (c[0] + c[1] + c[2]) / 3;
+    if (L > best) { best = L; at = i / 4; }
+    if (L > cap) for (let k = 0; k < 3; k++) data[i + k] = h(c[k] * cap / L);
+  }
+  tex.needsUpdate = true;
+  const a = ((at % width) / width - 0.5) * 2 * Math.PI; // equirect u -> atan2(z, x)
+  return Math.atan2(Math.cos(a), Math.sin(a));
+}
 const hdr = await new HDRLoader().loadAsync(HDRI);
 hdr.mapping = THREE.EquirectangularReflectionMapping;
-scene.environment = hdr;
-scene.environmentIntensity = 0.45;
+const hdrSunAz = removeSun(hdr);
+const ENV = 0.45;
 // Seen past the wall's edge at grazing camera angles: the garden, out of focus.
 scene.background = hdr;
 scene.backgroundBlurriness = 0.4;
-scene.backgroundIntensity = 0.45;
+scene.backgroundIntensity = ENV;
+scene.environmentIntensity = ENV;
+
+// The butterfly sits a few mm from a wall that hides half the sky and throws back warm sunlit
+// plaster, so its environment is captured from where it is, in a scene with just the sky, a sunlit
+// wall and the same sun (no shadows needed: nothing in it casts any).
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envScene = new THREE.Scene();
+envScene.background = hdr;
+// Pre-filtered here: left to the renderer, it would be filtered in the middle of the capture.
+envScene.environment = pmrem.fromEquirectangular(hdr).texture;
+const envSun = new THREE.DirectionalLight(sun.color, sun.intensity / ENV); // /ENV: the capture is scaled by ENV again
+const envWall = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0xd2cbbe, roughness: 1 })); // mean plaster colour
+envScene.add(envSun, envWall);
+let envTarget = null;
+function captureEnvironment(pos) {
+  const rot = sunAngles.az - hdrSunAz;
+  for (const e of [scene.backgroundRotation, envScene.backgroundRotation, envScene.environmentRotation]) e.y = rot;
+  envSun.position.copy(sunDir);
+  envTarget = pmrem.fromScene(envScene, 0, 0.001, 20, { size: 128, position: pos, renderTarget: envTarget });
+  scene.environment = envTarget.texture;
+}
 
 // ---------- post: shallow macro depth of field ----------
 
@@ -387,6 +428,7 @@ addEventListener('resize', () => {
 const clock = new THREE.Clock();
 // ?slow=0.1 plays time slower, for watching the wingbeats.
 const timeScale = +(params.get('slow') ?? 1);
+const envAt = { sun: new THREE.Vector3(), pos: new THREE.Vector3(0, 0, -1) };
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 1 / 30) * timeScale;
   if (state.mode === 'rest') idle(dt);
@@ -398,6 +440,13 @@ renderer.setAnimationLoop(() => {
   // Keep the butterfly in focus wherever it is.
   sun.target.position.copy(bf.group.position);
   sun.position.copy(bf.group.position).addScaledVector(sunDir, 0.7);
+  // Re-capture the environment when the sun turns or the butterfly has moved: 1 cm near the wall,
+  // more further out, where the wall's share of the view changes slowly.
+  if (!sunDir.equals(envAt.sun) || bf.group.position.distanceTo(envAt.pos) > 0.01 + 0.25 * Math.abs(bf.group.position.z)) {
+    envAt.sun.copy(sunDir);
+    envAt.pos.copy(bf.group.position);
+    captureEnvironment(envAt.pos.clone().setZ(Math.max(envAt.pos.z, 0.003)));
+  }
   controls.target.lerp(state.rest.pos, 1 - Math.exp(-2 * dt));
   controls.update();
   focus.value = THREE.MathUtils.damp(focus.value, camera.position.distanceTo(bf.group.position), 6, dt);
