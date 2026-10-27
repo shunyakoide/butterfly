@@ -1,67 +1,65 @@
 import * as THREE from 'three/webgpu';
-import { uniform, positionWorld, time, smoothstep, mix, vec3, exp, fract, mx_noise_float } from 'three/tsl';
-import { fbm } from './noise.js';
+import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, sin, hash } from 'three/tsl';
 
-// Only the butterfly is real. It stands on a wall built of lines: a fine net that follows a few mm
-// of relief, over two coarser grids further back tied to it by posts, so the wall has depth seen
-// from any angle. The lines fade out with distance from the butterfly into a dark space that goes
-// on without end, where specks of light drift slowly away. When the butterfly leaves, the wall goes
-// with it. The lines glow (they are the only light back there), the butterfly's shadow still falls
-// on the net, and both reach the butterfly through its environment capture.
+// Only the butterfly is real. It stands on a wall built of lines: square columns drawn as
+// outlines, their tops level into a platform under the butterfly and, further out, dropped to
+// scattered depths, sinking away into a dark space that goes on without end, where specks of light
+// drift. The columns are placed in the vertex shader, so the platform forms wherever the butterfly
+// is; when it leaves, the whole wall sinks, and rises again when it returns. The lines glow (the
+// only light back there), the butterfly's shadow still falls on the platform, and both reach the
+// butterfly through its environment capture.
 
 export const VOID = 0x010103; // the colour of the space behind
-const SPAN = 1.2;             // m, extent of the line wall (the butterfly lands within the view)
-const NET = 0.004;            // m, spacing of the front net
-const RELIEF = 0.004;         // m, peak-to-peak relief of the front net
-const LAYERS = [[-0.015, 0.012], [-0.04, 0.024]]; // [depth, spacing] of the grids behind
+const SPAN = 1.2;   // m, extent of the wall (the butterfly lands within the view)
+const CELL = 0.008; // m, column pitch; each column is drawn 84% of it wide, so they read apart
 
-function latticeGeometry() {
-  const v = [];
-  const seg = (a, b) => v.push(...a, ...b);
-  const n = Math.round(SPAN / NET), h0 = -SPAN / 2;
-  // Front net, heights from the same kind of fBm the plaster used.
-  const H = [];
-  for (let j = 0; j <= n; j++) {
-    for (let i = 0; i <= n; i++) H.push((fbm(i * NET * 12 + 50, j * NET * 12 + 50, 4, 3) - 0.5) * RELIEF);
-  }
-  const P = (i, j) => [h0 + i * NET, h0 + j * NET, H[j * (n + 1) + i]];
-  for (let j = 0; j <= n; j++) {
-    for (let i = 0; i < n; i++) { seg(P(i, j), P(i + 1, j)); seg(P(j, i), P(j, i + 1)); }
-  }
-  // Grids behind, each tied to the layer in front by posts at its own spacing.
-  let front = 0;
-  for (const [z, step] of LAYERS) {
-    const m = Math.round(SPAN / step);
-    for (let a = 0; a <= m; a++) {
-      const t = h0 + a * step;
-      seg([h0, t, z], [-h0, t, z]);
-      seg([t, h0, z], [t, -h0, z]);
-      for (let b = 0; b <= m; b++) seg([t, h0 + b * step, front], [t, h0 + b * step, z]);
+// Per column: the 4 edges of its top and its 4 corner posts. z is 0 at the top and -1 at the foot;
+// the shader places it.
+function columnsGeometry() {
+  const n = Math.round(SPAN / CELL), h0 = -SPAN / 2, a = CELL * 0.42;
+  const corners = [[-a, -a], [a, -a], [a, a], [-a, a]];
+  const pos = [], cell = [];
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const cx = h0 + (i + 0.5) * CELL, cy = h0 + (j + 0.5) * CELL;
+      for (let k = 0; k < 4; k++) {
+        const [x0, y0] = corners[k], [x1, y1] = corners[(k + 1) % 4];
+        pos.push(cx + x0, cy + y0, 0, cx + x1, cy + y1, 0, cx + x0, cy + y0, 0, cx + x0, cy + y0, -1);
+        for (let v = 0; v < 4; v++) cell.push(cx, cy);
+      }
     }
-    front = z;
   }
-  return new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  return new THREE.BufferGeometry()
+    .setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    .setAttribute('cell', new THREE.Float32BufferAttribute(cell, 2));
 }
 
 export function buildRift() {
   const centre = uniform(new THREE.Vector2()), radius = uniform(0);
 
   // ---------- the wall of lines ----------
-  const pw = positionWorld;
-  const d = pw.xy.sub(centre).length();
-  const reach = radius.mul(mx_noise_float(vec3(pw.xy.mul(20), time.mul(0.1))).mul(0.25).add(1)); // ragged ±25%
-  const fade = smoothstep(reach.mul(0.35), reach, d).oneMinus();
-  const depthDim = mix(0.3, 1, smoothstep(-0.04, 0, pw.z));
+  const cell = attribute('cell', 'vec2'), g = positionGeometry;
+  const d = cell.sub(centre).length();
+  const h = hash(cell.x.mul(7919).add(cell.y.mul(104729)));
+  // 0 on the platform, 1 well away from it (or everywhere, while the butterfly is away).
+  const drop = smoothstep(radius.mul(0.6), radius.mul(2.2).add(0.001), d);
+  // Platform tops jitter by ~1 mm; dropped columns sink 2-27 cm and bob slowly.
+  const sink = mix(h.mul(0.0015), h.mul(h).mul(0.25).add(0.02).add(sin(time.mul(0.5).add(h.mul(6.283))).mul(0.01)), drop);
+  const length = mix(0.004, 0.035, drop); // m, how far each column's posts reach back
+  // Opaque, so nearer lines hide farther ones: added up, the platform blew out to white at grazing angles.
+  const lineMaterial = new THREE.LineBasicNodeMaterial();
+  lineMaterial.positionNode = vec3(g.x, g.y, sink.negate().add(g.z.mul(length)));
+  const top = g.z.add(1); // 1 at the tops, 0 at the feet: posts fade into the dark
+  const fade = smoothstep(radius.max(0.06).mul(2.5), radius.max(0.06).mul(4.5), d).oneMinus();
   // A faint ring sweeping out from the butterfly now and then.
   const ring = exp(d.sub(fract(time.mul(0.15)).mul(radius).mul(1.6)).div(0.004).pow(2).negate()).mul(0.8);
-  const lineMaterial = new THREE.LineBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
-  lineMaterial.colorNode = vec3(0.35, 0.75, 1).mul(fade).mul(depthDim).mul(ring.add(0.6));
-  const lattice = latticeGeometry();
-  const lines = new THREE.LineSegments(lattice, lineMaterial);
+  lineMaterial.colorNode = mix(new THREE.Color(VOID), vec3(0.35, 0.75, 1).mul(ring.add(0.7)), top.mul(0.75).add(0.25).mul(fade).mul(exp(sink.mul(-8))));
+  const columns = columnsGeometry();
+  const lines = new THREE.LineSegments(columns, lineMaterial);
   lines.frustumCulled = false;
-  const envLines = new THREE.LineSegments(lattice, lineMaterial);
+  const envLines = new THREE.LineSegments(columns, lineMaterial);
 
-  // Shadows on the net: a surface that draws nothing but the shadow, over the lines behind it.
+  // Shadows on the platform: a surface that draws nothing but the shadow, over the lines behind it.
   const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowNodeMaterial({ opacity: 0.7 }));
   shadowCatcher.receiveShadow = true;
   shadowCatcher.renderOrder = 1;
