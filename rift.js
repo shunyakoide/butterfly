@@ -1,18 +1,19 @@
 import * as THREE from 'three/webgpu';
-import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, floor, hash, select } from 'three/tsl';
+import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, hash, select } from 'three/tsl';
 
 // Only the butterfly is real. It stands on a wall built of lines: square columns drawn as
-// outlines, their tops level only under the butterfly's feet and, all around, at scattered depths
-// that keep changing, sinking away into a dark space that goes on without end, where specks of light
-// drift. The columns are placed in the vertex shader, so the platform forms wherever the butterfly
-// is; when it leaves, the whole wall sinks, and rises again when it returns. The lines glow (the
+// outlines, their tops all level but for a block raised under the butterfly's feet. Behind the wall
+// is a dark space that goes on without end, where specks of light drift. The columns are placed in
+// the vertex shader, so the block forms wherever the butterfly is; when it leaves, the block sinks
+// back to the level, and rises again when it returns. The lines glow (the
 // only light back there), the butterfly's shadow still falls on the platform, and both reach the
 // butterfly through its environment capture.
 
 export const VOID = 0x010103; // the colour of the space behind
 const SPAN = 1.0;   // m, extent of the wall searched for visible columns
 const CELL = 0.005; // m, column pitch; each column is drawn 84% of it wide, so they read apart
-const DEEPEST = 0.3;  // m, how far back a column's foot can reach (sink + post length, below)
+const RAISE = 0.015; // m, how far the block under the butterfly stands out from the rest
+const DEEPEST = RAISE + 0.01; // m, how far back a column's foot can reach (sink + post length, below)
 
 // The camera never moves, so only columns that show in it are built: a column is kept when the box
 // spanned by its top and its deepest foot, on screen, overlaps the frame (with a margin for the sway).
@@ -72,12 +73,10 @@ export function buildRift(camera) {
   const h = hash(key);
   // 0 on the platform, 1 well away from it (or everywhere, while the butterfly is away).
   const drop = smoothstep(radius.mul(0.2), radius.mul(0.6).add(0.001), d);
-  // Under the feet the tops jitter by ~1 mm; elsewhere each column holds a depth of 2-27 cm for a few
-  // seconds, then slides to a new one, on its own schedule, so the wall never settles.
-  const phase = time.mul(0.15).add(h.mul(7));
-  const depth = mix(hash(key.add(fract(floor(phase).mul(0.618)).mul(1e7))), hash(key.add(fract(floor(phase).add(1).mul(0.618)).mul(1e7))), smoothstep(0.6, 1, fract(phase)));
-  const sink = mix(h.mul(0.0015), depth.mul(depth).mul(0.25).add(0.02), drop);
-  const length = mix(0.004, 0.012, drop); // m, how far each column's posts reach back
+  // Under the feet the tops jitter by ~1 mm; elsewhere they lie level, RAISE further back, so only the
+  // butterfly's place stands out. The raised block's posts reach back to the level, so it shows sides.
+  const sink = mix(h.mul(0.0015), RAISE, drop);
+  const length = mix(RAISE + 0.004, 0.004, drop); // m, how far each column's posts reach back
   // Mixed looks: ~70% of columns are outlines, ~20% filled blocks, ~10% shrunk to a pixel-like dot.
   const style = hash(key.add(300000));
   const filled = style.lessThan(0.2), dot = style.greaterThan(0.9);
