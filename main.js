@@ -9,6 +9,7 @@ import { Butterfly, REST_HEIGHT } from './butterfly.js';
 import { morphoPattern, mutatePattern } from './pattern.js';
 import { buildRift, VOID } from './rift.js';
 import { buildCircuit } from './circuit.js';
+import { buildGlass } from './glass.js';
 
 // Units are meters. The wall is the z = 0 plane, facing +z.
 const HDRI = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/garden_nook_2k.hdr';
@@ -36,15 +37,18 @@ const cameraRest = camera.quaternion.clone(); // the view is fixed; only the han
 
 const rift = buildRift(camera);
 const circuit = buildCircuit(camera);
-scene.add(rift.wall, rift.space, circuit.wall);
-// Two walls to choose from: the columns, or circuitry (?wall=circuit, or W to switch). The shadow and
-// the space behind are shared.
-let wallKind = params.get('wall') === 'circuit' ? 'circuit' : 'columns';
+const glass = buildGlass(camera);
+scene.add(rift.wall, rift.space, circuit.wall, glass.wall);
+// Three walls to choose from: the columns, circuitry or a crystal block (?wall=circuit|glass, or W to
+// cycle). The shadow and the space behind are shared; the specks take each wall's colour.
+const WALLS = ['columns', 'circuit', 'glass'];
+const SPECKS = { columns: 0xffffff, circuit: 0xffb070, glass: 0xd8e4ee };
+let wallKind = WALLS.includes(params.get('wall')) ? params.get('wall') : 'columns';
 function showWall() {
-  const isCircuit = wallKind === 'circuit';
-  rift.columns.visible = rift.envColumns.visible = !isCircuit;
-  circuit.wall.visible = circuit.envWall.visible = isCircuit;
-  rift.space.material.color.set(isCircuit ? 0xffb070 : 0xffffff); // warm specks among the amber
+  rift.columns.visible = rift.envColumns.visible = wallKind === 'columns';
+  circuit.wall.visible = circuit.envWall.visible = wallKind === 'circuit';
+  glass.wall.visible = glass.envWall.visible = wallKind === 'glass';
+  rift.space.material.color.set(SPECKS[wallKind]);
 }
 showWall();
 // Where the wall was: 1.6 m square, for picking points on it (most of it is no longer drawn).
@@ -106,7 +110,7 @@ scene.environmentIntensity = ENV;
 const pmrem = new THREE.PMREMGenerator(renderer);
 const envScene = new THREE.Scene();
 envScene.background = hdr;
-envScene.add(rift.envWall, circuit.envWall);
+envScene.add(rift.envWall, circuit.envWall, glass.envWall);
 let envTarget = null;
 function captureEnvironment(pos) {
   const rot = sunAngles.az - hdrSunAz;
@@ -424,7 +428,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽 ・ W で壁を切り替え';
 addEventListener('keydown', (e) => {
   if (e.key !== 'w' && e.key !== 'W') return;
-  wallKind = wallKind === 'circuit' ? 'columns' : 'circuit';
+  wallKind = WALLS[(WALLS.indexOf(wallKind) + 1) % WALLS.length];
   showWall();
   envAt.radius = -1; // re-capture the environment: the light from the wall has changed
 });
@@ -435,6 +439,7 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   rift.fit();
   circuit.fit();
+  glass.fit();
 });
 
 // ---------- loop ----------
@@ -470,6 +475,7 @@ renderer.setAnimationLoop(() => {
   realRadius = THREE.MathUtils.damp(realRadius, state.mode === 'rest' ? 0.12 : 0, state.mode === 'rest' ? 2 : 5, dt);
   rift.update(dt, state.rest.pos.x, state.rest.pos.y, realRadius);
   circuit.update(state.rest.pos.x, state.rest.pos.y, realRadius);
+  glass.update(state.rest.pos.x, state.rest.pos.y, realRadius);
   // Re-capture the environment when the sun turns, the wall has grown or shrunk, or the butterfly has
   // moved: 1 cm near the wall, more further out, where the wall's share of the view changes slowly.
   if (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.01 ||

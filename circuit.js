@@ -13,7 +13,7 @@ const TRACES = 40; // per layer: sparse, so most of the wall is dark
 const RING = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
 
 // Where the frame (with a margin for the sway) meets the plane at depth z.
-function footprint(camera, z) {
+export function footprint(camera, z) {
   const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z), p = new THREE.Vector3();
   const box = new THREE.Box2();
   for (const [x, y] of [[-1.05, -1.05], [1.05, -1.05], [1.05, 1.05], [-1.05, 1.05]]) {
