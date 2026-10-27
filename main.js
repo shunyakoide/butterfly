@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { pass, uniform } from 'three/tsl';
+import { pass, uniform, positionWorld, floor, fract, hash, sin, time, step, min, fwidth, smoothstep, mix, texture, vec2, vec3, vec4, float, normalMap } from 'three/tsl';
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -66,11 +66,37 @@ function plasterTextures(size, period) {
 }
 
 const plaster = plasterTextures(1024, 4);
-for (const t of Object.values(plaster)) t.repeat.set(5, 5);
-const wall = new THREE.Mesh(
-  new THREE.PlaneGeometry(1.6, 1.6),
-  new THREE.MeshPhysicalMaterial({ map: plaster.color, normalMap: plaster.normal, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.92 }),
-);
+
+// Only the wall around the butterfly is real. Further out it comes apart into 4 mm cells that hold
+// one flat plaster colour each, and beyond that into a dark surface ruled with a faintly glowing
+// grid: the data the real wall is resolved from. Cells cross over at slightly different, flickering
+// distances, so the boundary reads as cells switching, not a fade. The glow is a real light source:
+// the butterfly's environment capture sees it and the blue reflects it.
+const real = { centre: uniform(new THREE.Vector2()), radius: uniform(0) };
+const CELL = 0.004, GRID = 0.012, LINE = 0.0003, EDGE = 0.04; // m; EDGE: width of the cell stage
+const wallMaterial = (() => {
+  const p = positionWorld.xy;
+  const toUV = (q) => q.div(1.6).add(0.5).mul(5); // the plane is 1.6 m; plaster repeats 5 times
+  const cell = floor(p.div(CELL));
+  const h = hash(cell.x.add(cell.y.mul(613)));
+  const d = cell.add(0.5).mul(CELL).sub(real.centre).length();
+  const t = d.sub(real.radius).div(EDGE).add(h.sub(0.5).mul(0.6)).add(sin(time.mul(1.5).add(h.mul(6.283))).mul(0.12));
+  const isCell = step(0, t), isGrid = step(1, t);
+  // Grid lines, anti-aliased and dimmed once thinner than a pixel.
+  const lines = (size, width) => {
+    const f = fract(p.div(size)), e = min(min(f.x, f.y), min(f.x.oneMinus(), f.y.oneMinus())).mul(size);
+    const aa = fwidth(p.x).max(1e-6);
+    return smoothstep(width.mul(0.5).add(aa), width.mul(0.5), e).mul(width.div(aa).min(1));
+  };
+  const m = new THREE.MeshPhysicalNodeMaterial({ roughness: 0.92 });
+  const plasterAt = (q) => texture(plaster.color, toUV(q)).rgb;
+  m.colorNode = mix(mix(plasterAt(p), plasterAt(cell.add(0.5).mul(CELL)), isCell), vec3(0.02, 0.024, 0.03), isGrid);
+  // Relief only where the wall is real; cells and grid are flat.
+  m.normalNode = normalMap(mix(texture(plaster.normal, toUV(p)), vec4(0.5, 0.5, 1, 1), isCell), vec2(0.6, 0.6));
+  m.emissiveNode = vec3(0.45, 0.8, 1).mul(lines(GRID, float(LINE)).mul(isGrid).mul(0.5).add(lines(CELL, float(LINE * 0.6)).mul(isCell.sub(isGrid)).mul(0.25)));
+  return m;
+})();
+const wall = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), wallMaterial);
 wall.receiveShadow = true;
 scene.add(wall);
 
@@ -120,16 +146,16 @@ scene.backgroundBlurriness = 0.4;
 scene.backgroundIntensity = ENV;
 scene.environmentIntensity = ENV;
 
-// The butterfly sits a few mm from a wall that hides half the sky and throws back warm sunlit
-// plaster, so its environment is captured from where it is, in a scene with just the sky, a sunlit
-// wall and the same sun (no shadows needed: nothing in it casts any).
+// The butterfly sits a few mm from a wall that hides half the sky and throws back sunlit plaster
+// and the grid's glow, so its environment is captured from where it is, in a scene with just the
+// sky, the same wall and the same sun (no shadows needed: nothing in it casts any).
 const pmrem = new THREE.PMREMGenerator(renderer);
 const envScene = new THREE.Scene();
 envScene.background = hdr;
 // Pre-filtered here: left to the renderer, it would be filtered in the middle of the capture.
 envScene.environment = pmrem.fromEquirectangular(hdr).texture;
 const envSun = new THREE.DirectionalLight(sun.color, sun.intensity / ENV); // /ENV: the capture is scaled by ENV again
-const envWall = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0xd2cbbe, roughness: 1 })); // mean plaster colour
+const envWall = new THREE.Mesh(wall.geometry, wallMaterial);
 envScene.add(envSun, envWall);
 let envTarget = null;
 function captureEnvironment(pos) {
@@ -435,7 +461,7 @@ addEventListener('resize', () => {
 const clock = new THREE.Clock();
 // ?slow=0.1 plays time slower, for watching the wingbeats.
 const timeScale = +(params.get('slow') ?? 1);
-const envAt = { sun: new THREE.Vector3(), pos: new THREE.Vector3(0, 0, -1) };
+const envAt = { sun: new THREE.Vector3(), pos: new THREE.Vector3(0, 0, -1), radius: 0 };
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 1 / 30) * timeScale;
   if (state.mode === 'rest') idle(dt);
@@ -447,10 +473,18 @@ renderer.setAnimationLoop(() => {
   // Keep the butterfly in focus wherever it is.
   sun.target.position.copy(bf.group.position);
   sun.position.copy(bf.group.position).addScaledVector(sunDir, 0.7);
-  // Re-capture the environment when the sun turns or the butterfly has moved: 1 cm near the wall,
-  // more further out, where the wall's share of the view changes slowly.
-  if (!sunDir.equals(envAt.sun) || bf.group.position.distanceTo(envAt.pos) > 0.01 + 0.25 * Math.abs(bf.group.position.z)) {
+  // Reality follows the butterfly: whole around it on the wall, shrinking as it flies out, gone
+  // while it's away (and grown back in when it returns).
+  const z = Math.abs(bf.group.position.z);
+  const realTarget = bf.group.visible ? 0.075 * (1 - THREE.MathUtils.smoothstep(z, 0.03, 0.35)) : 0;
+  real.radius.value = THREE.MathUtils.damp(real.radius.value, realTarget, 2, dt);
+  real.centre.value.set(bf.group.position.x, bf.group.position.y);
+  // Re-capture the environment when the sun turns, the real patch has changed, or the butterfly has
+  // moved: 1 cm near the wall, more further out, where the wall's share of the view changes slowly.
+  if (!sunDir.equals(envAt.sun) || Math.abs(real.radius.value - envAt.radius) > 0.005 ||
+      bf.group.position.distanceTo(envAt.pos) > 0.01 + 0.25 * z) {
     envAt.sun.copy(sunDir);
+    envAt.radius = real.radius.value;
     envAt.pos.copy(bf.group.position);
     captureEnvironment(envAt.pos.clone().setZ(Math.max(envAt.pos.z, 0.003)));
   }
