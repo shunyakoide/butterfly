@@ -10,6 +10,7 @@ import { morphoPattern, mutatePattern } from './pattern.js';
 import { buildRift, VOID } from './rift.js';
 import { buildCircuit } from './circuit.js';
 import { buildGlass } from './glass.js';
+import { buildOverlay } from './fx.js';
 
 // Units are meters. The wall is the z = 0 plane, facing +z.
 const HDRI = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/garden_nook_2k.hdr';
@@ -130,7 +131,7 @@ const sharp = dof(scenePass.getTextureNode(), scenePass.getViewZNode(), focus, u
 const glowing = sharp.add(bloom(sharp, 0.2, 0.3, 1.1)); // threshold above the lit wings, so only highlights and lines glow
 const fringed = chromaticAberration(glowing, 0.2, vec2(0.5, 0.5), 1.0);
 const vignette = smoothstep(0.35, 0.95, screenUV.sub(0.5).length().mul(1.4)).mul(0.45).oneMinus();
-pipeline.outputNode = film(vec4(fringed.rgb.mul(vignette), 1), float(0.12));
+// (outputNode is set below, once the butterfly exists for the overlay.)
 
 // ---------- butterfly behaviour ----------
 
@@ -138,6 +139,12 @@ pipeline.outputNode = film(vec4(fringed.rgb.mul(vignette), 1), float(0.12));
 const wearParam = params.get('wear');
 const bf = new Butterfly({ ...morphoPattern(), ...(wearParam && { wear: +wearParam }) });
 scene.add(bf.group);
+
+// The analysis overlay (fx.js): E to toggle, ?fx=on to start with it. Its insets go in before the
+// vignette and grain, so they read as part of the same photographed frame.
+const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode() });
+overlay.toggle(params.get('fx') === 'on');
+pipeline.outputNode = film(vec4(overlay.apply(fringed.rgb).mul(vignette), 1), float(0.12));
 
 const WALL_N = new THREE.Vector3(0, 0, 1);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -427,8 +434,9 @@ addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = state.mode === 'rest' && hitsButterfly(e) ? 'pointer' : '';
 });
-hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽 ・ W で壁を切り替え';
+hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽 ・ W で壁を切り替え ・ E で分析表示';
 addEventListener('keydown', (e) => {
+  if (e.key === 'e' || e.key === 'E') overlay.toggle();
   if (e.key !== 'w' && e.key !== 'W') return;
   wallKind = WALLS[(WALLS.indexOf(wallKind) + 1) % WALLS.length];
   showWall();
@@ -490,4 +498,5 @@ renderer.setAnimationLoop(() => {
   handheld(clock.elapsedTime);
   focus.value = THREE.MathUtils.damp(focus.value, camera.position.distanceTo(bf.group.position), 6, dt);
   pipeline.render();
+  overlay.update(clock.elapsedTime);
 });
