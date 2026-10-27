@@ -194,7 +194,7 @@ const state = {
   rest: restPose(0, 0, deg(80)),
   curve: null, s: 0, dist: 0, length: 1, speed: 1,
   phase: 0, timer: 0, flapping: 1, flap: 1, bout: 3, glide: 0, alt: 0,
-  restAngle: deg(10), restTarget: deg(10), restSwitch: rand(5, 10),
+  restAngle: deg(10), restTarget: deg(10), restSwitch: rand(5, 10), lean: 0, leanTarget: deg(rand(-6, 6)),
 };
 bf.group.position.copy(state.rest.pos);
 bf.group.quaternion.copy(state.rest.quat);
@@ -308,7 +308,7 @@ function fly(dt) {
   const fore = THREE.MathUtils.lerp(GLIDE_WINGS, stroke(state.phase), state.flap);
   const hind = THREE.MathUtils.lerp(GLIDE_WINGS, stroke(state.phase - HIND_LAG), state.flap);
   const twist = -TWIST * Math.sin(state.phase) * state.flap;
-  bf.setWings(THREE.MathUtils.lerp(state.restAngle, fore, air), THREE.MathUtils.lerp(state.restAngle, hind, air), twist * air);
+  bf.setWings(THREE.MathUtils.lerp(state.restAngle, fore, air), THREE.MathUtils.lerp(state.restAngle, hind, air), twist * air, state.lean * (1 - air));
 
   // Climb while flapping, sink while gliding; the offset returns to the path near the wall.
   state.alt += (state.flapping > 0.5 ? CLIMB : -SINK) * SPEED * dt * free;
@@ -360,11 +360,16 @@ function idle(dt) {
     const open = state.restTarget > deg(45);
     state.restTarget = open ? deg(rand(4, 25)) : CLOSED;
     state.restSwitch = open ? rand(5, 10) : rand(1, 2.5);
+    // Basking wings are never quite symmetric, and a few degrees of tilt swings the structural
+    // blue's brightness a lot (reflection moves by twice the tilt): est., from photos where the
+    // two sides differ clearly.
+    if (!open) state.leanTarget = deg(rand(-6, 6));
   }
   // ?pose=open or ?pose=closed holds the wings still, for comparing against reference photos.
-  if (pose) state.restTarget = pose === "open" ? deg(4) : CLOSED;
+  if (pose) [state.restTarget, state.leanTarget] = pose === "open" ? [deg(4), deg(5)] : [CLOSED, 0];
   state.restAngle = THREE.MathUtils.damp(state.restAngle, state.restTarget, 5, dt);
-  bf.setWings(state.restAngle);
+  state.lean = THREE.MathUtils.damp(state.lean, state.leanTarget, 3, dt);
+  bf.setWings(state.restAngle, state.restAngle, 0, state.lean);
 }
 
 // ---------- input ----------
