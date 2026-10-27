@@ -4,12 +4,13 @@ import { footprint } from './circuit.js';
 
 // A third wall: the face of a crystal block, in silver and white. Glass tiles make the face the
 // butterfly stands on; behind them glass boxes of every size and a few dark solid blocks go back
-// into the dark, threaded with white maze-like lines that pulses run along. Some tiles and boxes
-// slide slowly in and out. The glass is faked to stay cheap: faces drawn additively, brighter
+// into the dark, threaded with white maze-like lines that pulses run along. Some tiles slide in and
+// out, and the boxes keep shifting to new places and back, rearranging the block. Tiles are clear or
+// frosted. The glass is faked to stay cheap: faces drawn additively, brighter
 // where seen edge-on, with lit edges, instead of real refraction.
 
 const TILE = 0.012; // m, pitch of the glass tiles on the face
-const LAYERS = [-0.02, -0.05, -0.1, -0.18, -0.32]; // m, depth of each layer of boxes behind the face
+const LAYERS = [-0.02, -0.05, -0.1, -0.18, -0.32, -0.55, -0.9]; // m, depth of each layer of boxes behind the face
 const BOXES = 45;  // per layer
 const TRACES = 30; // maze lines per layer
 
@@ -18,32 +19,38 @@ const TRACES = 30; // maze lines per layer
 function blockGeometry(camera) {
   camera.updateMatrixWorld();
   const r = Math.random;
-  const glass = { pos: [], nrm: [], centre: [], slide: [], phase: [] };
-  const solid = { pos: [], nrm: [], centre: [], slide: [], phase: [] };
-  const edges = { pos: [], centre: [], slide: [], phase: [] };
+  const glass = { pos: [], nrm: [], centre: [], slide: [], phase: [], move: [], frost: [], keep: [] };
+  const solid = { pos: [], nrm: [], centre: [], slide: [], phase: [], move: [], frost: [], keep: [] };
+  const edges = { pos: [], centre: [], slide: [], phase: [], move: [], frost: [], keep: [] };
   const box = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
   const bp = box.attributes.position.array, bn = box.attributes.normal.array;
   const corners = [];
   for (let i = 0; i < 8; i++) corners.push([(i & 1) - 0.5, ((i >> 1) & 1) - 0.5, ((i >> 2) & 1) - 0.5]);
   const EDGES = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
-  function add(target, cx, cy, cz, sx, sy, sz, slide, phase) {
+  // move: where the box shifts to, now and then, before coming back; frost: 1 for frosted glass.
+  // keep: 0 for a tile shown only while the butterfly stands on it.
+  function add(target, cx, cy, cz, sx, sy, sz, slide, phase, move = [0, 0, 0], frost = 0, keep = 1) {
+    const tag = (t) => { t.centre.push(cx, cy); t.slide.push(slide); t.phase.push(phase); t.move.push(...move); t.frost.push(frost); t.keep.push(keep); };
     for (let i = 0; i < bp.length; i += 3) {
       target.pos.push(cx + bp[i] * sx, cy + bp[i + 1] * sy, cz + bp[i + 2] * sz);
       target.nrm.push(bn[i], bn[i + 1], bn[i + 2]);
-      target.centre.push(cx, cy); target.slide.push(slide); target.phase.push(phase);
+      tag(target);
     }
     for (const [a, b] of EDGES) for (const k of [a, b]) {
       const c = corners[k];
       edges.pos.push(cx + c[0] * sx, cy + c[1] * sy, cz + c[2] * sz);
-      edges.centre.push(cx, cy); edges.slide.push(slide); edges.phase.push(phase);
+      tag(edges);
     }
   }
-  // The face: tiles 3 mm thick, flush at z = 0; a third of them slide back up to 2 cm, now and then.
+  // The face: tiles 3 mm thick, flush at z = 0, in scattered patches so the depths show between them
+  // (plus, in the shader, wherever the butterfly stands); a third slide back up to 2 cm, now and then.
   const front = footprint(camera, 0);
+  const patches = Array.from({ length: 7 }, () => [front.min.x + r() * (front.max.x - front.min.x), front.min.y + r() * (front.max.y - front.min.y), 0.015 + 0.03 * r()]);
   for (let x = Math.floor(front.min.x / TILE) * TILE; x < front.max.x; x += TILE) {
     for (let y = Math.floor(front.min.y / TILE) * TILE; y < front.max.y; y += TILE) {
-      if (r() < 0.08) continue; // a few missing
-      add(glass, x + TILE / 2, y + TILE / 2, -0.0015, TILE * 0.94, TILE * 0.94, 0.003, r() < 0.33 ? 0.02 * r() : 0, r());
+      const cx = x + TILE / 2, cy = y + TILE / 2;
+      const inPatch = patches.some(([px, py, pr]) => Math.hypot(cx - px, cy - py) < pr * (0.7 + 0.6 * r()));
+      add(glass, cx, cy, -0.0015, TILE * 0.94, TILE * 0.94, 0.003, r() < 0.33 ? 0.02 * r() : 0, r(), undefined, r() < 0.4 ? 1 : 0, inPatch ? 1 : 0);
     }
   }
   // Behind: boxes on a pitch that grows with depth as the view shrinks it, some solid.
@@ -52,7 +59,10 @@ function blockGeometry(camera) {
     for (let n = 0; n < BOXES; n++) {
       const sx = (1 + Math.floor(r() * 6)) * g, sy = (1 + Math.floor(r() * 6)) * g, sz = (1 + Math.floor(r() * 8)) * g;
       const cx = fp.min.x + r() * (fp.max.x - fp.min.x), cy = fp.min.y + r() * (fp.max.y - fp.min.y);
-      add(r() < 0.15 ? solid : glass, cx, cy, z - sz / 2, sx, sy, sz, 0.03 * r(), r());
+      // Every box shifts by its own width or height along x or y (or back by its depth) now and then.
+      const axis = Math.floor(r() * 3), sign = r() < 0.5 ? -1 : 1;
+      const move = [axis === 0 ? sign * sx : 0, axis === 1 ? sign * sy : 0, axis === 2 ? -sz : 0];
+      add(r() < 0.15 ? solid : glass, cx, cy, z - sz / 2, sx, sy, sz, 0.03 * r(), r(), move, r() < 0.3 ? 1 : 0);
     }
   }
   const make = (t) => {
@@ -60,7 +70,10 @@ function blockGeometry(camera) {
     if (t.nrm) geo.setAttribute('normal', new THREE.Float32BufferAttribute(t.nrm, 3));
     return geo.setAttribute('centre', new THREE.Float32BufferAttribute(t.centre, 2))
       .setAttribute('slide', new THREE.Float32BufferAttribute(t.slide, 1))
-      .setAttribute('phase', new THREE.Float32BufferAttribute(t.phase, 1));
+      .setAttribute('phase', new THREE.Float32BufferAttribute(t.phase, 1))
+      .setAttribute('shift', new THREE.Float32BufferAttribute(t.move, 3))
+      .setAttribute('frost', new THREE.Float32BufferAttribute(t.frost, 1))
+      .setAttribute('keep', new THREE.Float32BufferAttribute(t.keep, 1));
   };
   return { glass: make(glass), solid: make(solid), edges: make(edges) };
 }
@@ -98,15 +111,26 @@ export function buildGlass(camera) {
   const d = boxCentre.sub(centre).length();
   const still = smoothstep(radius.mul(0.25), radius.mul(0.6).add(0.001), d);
   const back = slide.mul(sin(time.mul(0.35).add(phase.mul(6.283))).mul(0.5).add(0.5)).mul(still);
-  const placed = positionGeometry.sub(vec3(0, 0, back));
+  // Every ~12 s on its own schedule a box glides to its shifted place, waits, and glides back, so the
+  // block keeps rearranging itself.
+  const cycle = fract(time.div(12).add(phase.mul(3.7)));
+  const shifted = smoothstep(0.05, 0.15, cycle).sub(smoothstep(0.55, 0.65, cycle));
+  // Tiles outside the patches grow in under the resting butterfly and shrink away when it leaves.
+  const underFeet = smoothstep(radius.mul(0.45), radius.mul(0.25), d);
+  const size = attribute('keep', 'float').max(underFeet);
+  const g = positionGeometry, shrunk = vec3(boxCentre.x.add(g.x.sub(boxCentre.x).mul(size)), boxCentre.y.add(g.y.sub(boxCentre.y).mul(size)), g.z);
+  const placed = shrunk.sub(vec3(0, 0, back)).add(attribute('shift', 'vec3').mul(shifted));
   // Dimmer with depth; brighter right around the resting butterfly.
-  const depthFade = exp(placed.z.mul(4));
+  const depthFade = exp(placed.z.mul(2.5));
   const near = exp(d.div(0.035).pow(2).negate()).mul(radius.div(0.12));
 
   const faceMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
   faceMat.positionNode = placed;
   const edgeOn = normalView.dot(positionViewDirection).abs().oneMinus().pow(3);
-  faceMat.colorNode = TINT.mul(edgeOn.mul(0.12).add(0.005)).mul(depthFade).mul(near.mul(2).add(1));
+  // Clear glass shows little but its edge-on sheen; frosted glass is milky all over.
+  const frost = attribute('frost', 'float');
+  const fill = mix(edgeOn.mul(0.12).add(0.004), edgeOn.mul(0.05).add(0.03), frost);
+  faceMat.colorNode = TINT.mul(fill).mul(depthFade).mul(near.mul(2).add(1));
 
   const solidMat = new THREE.MeshStandardNodeMaterial({ color: 0x1a1d20, roughness: 0.35, metalness: 0.6 });
   solidMat.positionNode = placed;

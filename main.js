@@ -360,10 +360,10 @@ function idle(dt) {
   const t = state.idleT = (state.idleT ?? 0) + dt;
 
   // As on a flower, the wings never quite settle: a slow pumping, open from the rest angle (or a
-  // little open from closed), every ~2.5 s, by an amount that drifts between 5° and 30° (est., from
+  // little open from closed), every ~2.5 s, by an amount that drifts between 12° and 30° (never so little it looks frozen) (est., from
   // videos of feeding butterflies). Fore and hind wings move together: they overlap, and any lag
   // pushes one through the other.
-  const amp = pose ? 0 : deg(5 + 25 * (0.5 + 0.5 * Math.sin(t * 0.13 + 1)) ** 2);
+  const amp = pose ? 0 : deg(12 + 18 * (0.5 + 0.5 * Math.sin(t * 0.21 + 1)));
   const pump = amp * (0.5 - 0.5 * Math.cos(t * 2.5));
   const angle = state.restTarget > deg(45) ? state.restAngle - pump * 0.5 : state.restAngle + pump;
   bf.setWings(angle, angle, 0, state.lean);
