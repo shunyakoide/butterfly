@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec2, vec3, exp, fract, select } from 'three/tsl';
+import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, select } from 'three/tsl';
 
 // A second wall, of circuitry: amber traces (some teal, some white) in layers that go back into the
 // dark, with pads at their ends and beams running straight back from some of them. Pulses of light
@@ -80,9 +80,9 @@ export function buildCircuit(camera) {
   const wave = fract(u.mul(mix(3, 12, s1)).sub(time.mul(s3.pow(2).mul(1.1).add(0.1))).add(seed.mul(10)));
   const pulse = smoothstep(tail, 1, wave).mul(mix(1.5, 4, s2));
   const pad = select(kind.equal(1), 1.2, 0);
-  // While the butterfly rests, a core of light burns just beside it (offset so the wings don't hide
-  // it), lighting the traces on every layer around it, as if the butterfly drew power from it.
-  const hot = exp(p.xy.sub(centre.add(vec2(0.035, 0.045))).length().div(0.05).pow(2).negate()).mul(radius.div(0.12)).mul(3);
+  // While the butterfly rests, a core of light burns under its feet, lighting the traces on every
+  // layer around it, as if the butterfly drew power from it.
+  const hot = exp(p.xy.sub(centre).length().div(0.05).pow(2).negate()).mul(radius.div(0.12)).mul(3);
   // Dimmer with depth; beams fade more slowly, so they reach far back.
   const depthFade = exp(p.z.mul(select(kind.equal(2), 0.8, 2)));
   // Mostly amber, some teal, some white.
