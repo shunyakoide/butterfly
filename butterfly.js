@@ -47,6 +47,7 @@ export class Butterfly {
     }));
     const body = buildBody();
     this.abdomen = body.userData.abdomen;
+    this.antennae = body.userData.antennae;
     this.group.add(body);
     this.group.scale.setScalar(SCALE);
 

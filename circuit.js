@@ -8,7 +8,7 @@ import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp,
 // line segments, drawn additively so crossings glow, and built only where the fixed camera sees it.
 
 const LAYERS = [0, -0.01, -0.03, -0.07, -0.15, -0.3, -0.6, -1.2]; // m, depth each layer of traces starts at
-const TRACES = 70; // per layer: sparse, so most of the wall is dark
+const TRACES = 40; // per layer: sparse, so most of the wall is dark
 // Eight directions in turning order, so a turn is ±1 step around the ring.
 const RING = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
 
@@ -72,13 +72,13 @@ export function buildCircuit(camera) {
   const centre = uniform(new THREE.Vector2()), radius = uniform(0);
   const u = attribute('u', 'float'), seed = attribute('seed', 'float'), kind = attribute('kind', 'float');
   const p = positionGeometry;
-  // Pulses differ from trace to trace: 2.5-17 cm apart, from short bright sparks to long dim streaks
-  // (a bright head with a fading tail), and from a crawl to a dash (0.3-8 pulses a second). Bright
+  // Pulses differ from trace to trace: 8-33 cm apart, from short bright sparks to longer dim streaks
+  // (a bright head with a fading tail), and from a crawl to a glide (0.1-1.2 pulses a second). Bright
   // enough (>1) for the bloom.
   const s1 = fract(seed.mul(13.17)), s2 = fract(seed.mul(71.3)), s3 = fract(seed.mul(37.9));
-  const tail = mix(0.4, 0.97, s2);
-  const wave = fract(u.mul(mix(6, 40, s1)).sub(time.mul(s3.pow(3).mul(8).add(0.3))).add(seed.mul(10)));
-  const pulse = smoothstep(tail, 1, wave).mul(mix(1.5, 6, s2));
+  const tail = mix(0.75, 0.97, s2);
+  const wave = fract(u.mul(mix(3, 12, s1)).sub(time.mul(s3.pow(2).mul(1.1).add(0.1))).add(seed.mul(10)));
+  const pulse = smoothstep(tail, 1, wave).mul(mix(1.5, 4, s2));
   const pad = select(kind.equal(1), 1.2, 0);
   // Under the resting butterfly the traces glow, as if it were drawing power from them.
   const hot = exp(p.xy.sub(centre).length().div(0.04).pow(2).negate()).mul(radius.div(0.12)).mul(2);
@@ -92,7 +92,7 @@ export function buildCircuit(camera) {
   const front = smoothstep(-0.06, -0.02, p.z);
   const shown = mix(1, near, front);
   const base = s1.mul(0.12).add(0.03).mul(near.mul(front)); // the steady glow, only near the butterfly
-  const material = new THREE.LineBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  const material = new THREE.LineBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending }); // writes depth, so the depth of field blurs the deep layers
   material.colorNode = tint.mul(pulse.add(base.add(pad.mul(near).mul(front))).add(hot).mul(depthFade).mul(shown));
 
   const lines = new THREE.LineSegments(undefined, material);

@@ -120,7 +120,7 @@ function captureEnvironment(pos) {
 const pipeline = new THREE.RenderPipeline(renderer);
 const scenePass = pass(scene, camera, { samples: 4 });
 const focus = uniform(camera.position.length());
-const sharp = dof(scenePass.getTextureNode(), scenePass.getViewZNode(), focus, uniform(0.03), uniform(2));
+const sharp = dof(scenePass.getTextureNode(), scenePass.getViewZNode(), focus, uniform(0.03), uniform(4)); // bokeh 4: the deep wall reads as far behind
 // What a real lens and sensor add, so the frame reads as photographed: glow around the bright lines
 // and highlights, a little colour fringing toward the corners, darker corners, and fine grain.
 const glowing = sharp.add(bloom(sharp, 0.2, 0.3, 1.1)); // threshold above the lit wings, so only highlights and lines glow
@@ -349,7 +349,30 @@ function idle(dt) {
   if (pose) [state.restTarget, state.leanTarget] = pose === "open" ? [deg(4), deg(5)] : [CLOSED, 0];
   state.restAngle = THREE.MathUtils.damp(state.restAngle, state.restTarget, 5, dt);
   state.lean = THREE.MathUtils.damp(state.lean, state.leanTarget, 3, dt);
-  bf.setWings(state.restAngle, state.restAngle, 0, state.lean);
+  const t = state.idleT = (state.idleT ?? 0) + dt;
+
+  // As on a flower, the wings never quite settle: a slow pumping, open from the rest angle (or a
+  // little open from closed), every ~2.5 s, by an amount that drifts between 5° and 30°, the hind
+  // wings a beat behind (est., from videos of feeding butterflies).
+  const amp = pose ? 0 : deg(5 + 25 * (0.5 + 0.5 * Math.sin(t * 0.13 + 1)) ** 2);
+  const pump = (lag) => amp * (0.5 - 0.5 * Math.cos(t * 2.5 - lag));
+  const closed = state.restTarget > deg(45);
+  const fore = closed ? state.restAngle - pump(0) * 0.5 : state.restAngle + pump(0);
+  const hind = closed ? state.restAngle - pump(0.4) * 0.5 : state.restAngle + pump(0.4);
+  bf.setWings(fore, hind, 0, state.lean);
+  // Breathing: the abdomen lifts and settles.
+  bf.abdomen.rotation.x = deg(-6) + deg(1.5) * Math.sin(t * 1.7);
+
+  // Antennae: each sweeps slowly on its own and now and then twitches, then eases back.
+  state.twitch ??= [[0, 0], [0, 0]];
+  bf.antennae.forEach((a, i) => {
+    const s = i ? 1 : -1, tw = state.twitch[i];
+    if (Math.random() < dt / 2.5) [tw[0], tw[1]] = [deg(rand(-12, 12)), deg(rand(-10, 10))];
+    tw[0] = THREE.MathUtils.damp(tw[0], 0, 3, dt);
+    tw[1] = THREE.MathUtils.damp(tw[1], 0, 3, dt);
+    a.rotation.z = s * deg(4) * Math.sin(t * 0.9 + i * 2.1) + deg(2) * Math.sin(t * 2.3 + i) + tw[0];
+    a.rotation.x = deg(5) * Math.sin(t * 0.7 + i * 1.3) + tw[1];
+  });
 }
 
 // ---------- input ----------

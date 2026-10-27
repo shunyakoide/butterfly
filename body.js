@@ -223,11 +223,14 @@ export function buildBody() {
   // Antennae: slender and long, thickening gradually into a club; dark brown with faint pale
   // rings at each segment, a pinkish base and a paler tip.
   // Length 0.36 x forewing (0.052), measured on a dorsal live photo and an M. achilles specimen.
+  // Each hangs from a pivot at its base (g.userData.antennae, [left, right]), so it can move.
   const ANT = 0.36 * 0.052;
+  const antennae = [];
   for (const s of [-1, 1]) {
-    const base = [s * 0.0006, HEAD.y + 0.0012, HEAD.z + 0.0015];
+    const pivot = new THREE.Group();
+    pivot.position.set(s * 0.0006, HEAD.y + 0.0012, HEAD.z + 0.0015);
     const pts = [[0, 0, 0], [0.0024, 0.3, 0.002], [0.0056, 0.62, 0.0034], [0.0084, 0.95, 0.0038]]
-      .map(([x, y, z]) => [base[0] + s * x * 0.72, base[1] + y * ANT * 0.97, base[2] + z * 0.72]);
+      .map(([x, y, z]) => [s * x * 0.72, y * ANT * 0.97, z * 0.72]);
     const radius = (t) => 0.00011 + 0.00017 * Math.pow(THREE.MathUtils.smoothstep(t, 0.6, 0.93), 1.5) - 0.0001 * THREE.MathUtils.smoothstep(t, 0.95, 1);
     const color = (t) => {
       const ring = Math.pow(Math.abs(Math.sin(t * Math.PI * 40)), 12) * 0.08;
@@ -235,8 +238,11 @@ export function buildBody() {
       if (t > 0.9) return hsl(25, 40, 25 + 20 * (t - 0.9) * 10);
       return hsl(22, 25, 13 + ring * 100);
     };
-    g.add(new THREE.Mesh(taperTube(pts, radius, color, { seg: 160, radial: 8 }), tubeMat));
+    pivot.add(new THREE.Mesh(taperTube(pts, radius, color, { seg: 160, radial: 8 }), tubeMat));
+    g.add(pivot);
+    antennae.push(pivot);
   }
+  g.userData.antennae = antennae;
 
   // ---------- legs ----------
   // Nymphalids walk on four legs. Each: coxa under the thorax, femur out and slightly up, tibia
