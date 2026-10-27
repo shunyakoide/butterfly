@@ -42,6 +42,14 @@ function blueSpots(bf) {
   return list;
 }
 
+// A thermal camera's palette for t in 0..1: deep blue, blue, red, orange, near white.
+export function heat(t) {
+  let col = mix(vec3(0.02, 0, 0.12), vec3(0.1, 0.25, 0.95), smoothstep(0, 0.25, t));
+  col = mix(col, vec3(0.95, 0.18, 0.1), smoothstep(0.25, 0.5, t));
+  col = mix(col, vec3(1, 0.62, 0.12), smoothstep(0.5, 0.75, t));
+  return mix(col, vec3(1, 1, 0.85), smoothstep(0.75, 1, t)).mul(1.4);
+}
+
 const num = () => (Math.random() < 0.3 ? (Math.random() * 3000 - 500).toFixed(3) : (Math.random() * 200 - 100).toFixed(Math.random() < 0.5 ? 4 : 6));
 
 export function buildOverlay({ camera, bf, frame }) {
@@ -56,13 +64,7 @@ export function buildOverlay({ camera, bf, frame }) {
 
   // ---------- insets, in the post pass ----------
   const insets = [0, 1].map((i) => ({ rect: uniform(new THREE.Vector4()), centre: uniform(new THREE.Vector2()), alpha: uniform(0), anchor: i * 5, t: i * INSET_HOLD / 2 }));
-  const thermal = (c) => {
-    const t = clamp(luminance(c).mul(1.6), 0, 1);
-    let col = mix(vec3(0.02, 0, 0.12), vec3(0.1, 0.25, 0.95), smoothstep(0, 0.25, t));
-    col = mix(col, vec3(0.95, 0.18, 0.1), smoothstep(0.25, 0.5, t));
-    col = mix(col, vec3(1, 0.62, 0.12), smoothstep(0.5, 0.75, t));
-    return mix(col, vec3(1, 1, 0.85), smoothstep(0.75, 1, t)).mul(1.4);
-  };
+  const thermal = (c) => heat(clamp(luminance(c).mul(1.6), 0, 1));
   const xray = (c) => vec3(0.75, 0.9, 1).mul(smoothstep(0.02, 0.6, luminance(c)).pow(0.7)).mul(1.5);
   function apply(base) {
     let out = base;

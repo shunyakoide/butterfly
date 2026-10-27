@@ -12,6 +12,7 @@ import { buildCircuit } from './circuit.js';
 import { buildGlass } from './glass.js';
 import { buildOverlay } from './fx.js';
 import { buildDigital, STYLES } from './digital.js';
+import { buildMotion } from './motion.js';
 
 // Units are meters. The wall is the z = 0 plane, facing +z.
 const HDRI = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/garden_nook_2k.hdr';
@@ -163,18 +164,21 @@ const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode() });
 overlay.toggle(params.get('fx') === 'on');
 
 // The butterfly as a screen print (digital.js): D steps through the styles and off, ?print=dots|
-// halftone|pixels|chrome to start with one. The butterfly's materials always write a mask beside the colour
+// halftone|pixels|chrome|holo|topo|thermal|wire to start with one. The butterfly's materials always write a mask beside the colour
 // (switching the scene pass's outputs at run time breaks the pipelines already built for the rest).
 scenePass.setMRT(mrt({ output, mask: float(0) }));
 scenePass.getTexture('mask').type = THREE.UnsignedByteType;
 const bfMask = mrt({ mask: float(1) });
 bf.group.traverse((o) => { if (o.isMesh) o.material.mrtNode = bfMask; });
-const digital = buildDigital({ colour, mask: scenePass.getTextureNode('mask') });
+const digital = buildDigital({ colour, smooth: blurred.getTextureNode(), bf, mask: scenePass.getTextureNode('mask') });
+// Trails, landing rings and shed scales (motion.js), always on.
+const motion = buildMotion({ scene, camera, bf });
 const chains = {};
 let printStyle = STYLES.includes(params.get('print')) ? params.get('print') : null;
 function setOutput() {
   // Each chain is built once (its bloom holds render targets).
-  pipeline.outputNode = chains[printStyle] ??= film(vec4(overlay.apply(lens(printStyle ? digital.apply(sharp, printStyle) : sharp).rgb).mul(vignette), 1), float(0.12));
+  pipeline.outputNode = chains[printStyle] ??= film(vec4(overlay.apply(lens(digital.apply(sharp, printStyle)).rgb).mul(vignette), 1), float(0.12));
+  digital.show(printStyle);
   pipeline.needsUpdate = true;
 }
 setOutput();
@@ -465,7 +469,7 @@ addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = state.mode === 'rest' && hitsButterfly(e) ? 'pointer' : '';
 });
-hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽 ・ W で壁を切り替え ・ E で分析表示 ・ D でプリント表示';
+hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽 ・ W で壁を切り替え ・ E で分析表示 ・ D で描き方を切り替え';
 addEventListener('keydown', (e) => {
   if (e.key === 'e' || e.key === 'E') overlay.toggle();
   if (e.key === 'd' || e.key === 'D') { printStyle = [...STYLES, null][(STYLES.indexOf(printStyle) + 1) % (STYLES.length + 1)]; setOutput(); }
@@ -531,7 +535,8 @@ renderer.setAnimationLoop(() => {
   focus.value = THREE.MathUtils.damp(focus.value, camera.position.distanceTo(bf.group.position), 6, dt);
   pipeline.render();
   overlay.update(clock.elapsedTime);
-  if (printStyle) digital.update();
+  digital.update(dt, state.mode);
+  motion.update(dt, state.mode);
   if (perf) showPerf();
 });
 
