@@ -100,7 +100,9 @@ function ommatidiaNormals(size = 128) {
 export function buildBody() {
   const r = rng(7);
   const g = new THREE.Group();
-  const cuticle = new THREE.MeshPhysicalMaterial({ color: 0x17110c, roughness: 0.6, clearcoat: 0.3 });
+  // Under the hair the body never shows bare: velvet, a sheen at grazing angles and no highlight
+  // (a glossy cuticle peeked through as a plastic spot).
+  const cuticle = new THREE.MeshPhysicalMaterial({ color: 0x0e0a07, roughness: 1, specularIntensity: 0.1, sheen: 1, sheenColor: 0x382c22, sheenRoughness: 0.7 });
   const tubeMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.55, sheen: 0.5, sheenColor: 0xffffff, sheenRoughness: 0.4 });
   // Hairs are thin and many: a soft sheen, not a glossy highlight each (that read as glitter).
   const hairMat = new THREE.MeshPhysicalMaterial({ roughness: 0.75, sheen: 0.3, sheenColor: 0xffffff, sheenRoughness: 0.5, specularIntensity: 0.3 });
@@ -115,26 +117,31 @@ export function buildBody() {
     const tuft = fbm(p.x * 900 + 5, p.y * 900, 3, 11);
     if (n.z < -0.25 && Math.abs(n.x) > 0.25 && p.y > 0.0005 && tuft > 0.5) return hsl(352, 65, 38 + r() * 10);
     if (n.z < -0.2 && Math.abs(n.x) > 0.4 && p.y < 0.0005 && tuft > 0.55) return hsl(44, 45, 62 + r() * 12);
-    if (n.z > 0.3 && r() < 0.25) return hsl(70, 10, 28 + r() * 10);
-    return hsl(24, 25, 8 + r() * 8);
+    if (n.z > 0.3 && r() < 0.25) return hsl(70, 10, 20 + r() * 8);
+    return hsl(24, 25, 5 + r() * 6);
   };
-  g.add(hairs(2600, () => {
+  g.add(hairs(7000, () => {
     const u = new THREE.Vector3(r() * 2 - 1, r() * 2 - 1, r() * 2 - 1);
     if (u.lengthSq() > 1 || u.lengthSq() < 1e-4) return null;
     u.normalize();
     const p = u.clone().multiply(TR), n = u.clone().divide(TR).normalize();
-    // Hair sweeps back and lies down a little; longest on the back and sides.
-    const dir = n.clone().multiplyScalar(0.8).add(new THREE.Vector3(0, -0.55, 0)).addScaledVector(
-      new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5), 0.5);
+    // A dense pile combed back along the surface, lifting only a little off it (photos: the thorax
+    // reads as velvet, not as separate hairs).
+    const back = new THREE.Vector3(0, -1, 0).addScaledVector(n, n.y);
+    const dir = back.normalize().addScaledVector(n, 0.45).addScaledVector(
+      new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5), 0.25);
     const len = (n.z > -0.3 ? 0.0009 : 0.0006) * (0.6 + r() * 0.7);
-    return { p, dir, len, width: 0.00003, color: thoraxColor(p, n) };
+    return { p, dir, len, width: 0.000025, color: thoraxColor(p, n) };
   }, hairMat));
   // Wing-root tufts: long hairs where the wings join, hiding the joint.
-  g.add(hairs(500, () => {
-    const s = r() < 0.5 ? -1 : 1, y = (r() - 0.5) * 0.0055;
-    const p = new THREE.Vector3(s * 0.0024, y, 0.0012 + r() * 0.0008);
-    const dir = new THREE.Vector3(s * (0.8 + r() * 0.4), -0.3 + r() * 0.3, 0.3 + r() * 0.3);
-    return { p, dir, len: 0.0012 + r() * 0.0008, width: 0.000035, color: hsl(24, 20, 10 + r() * 10) };
+  // They fan back over the wing bases and lie on them, longest at the middle of the joint, so the
+  // tuft has a ragged edge rather than a comb's straight one.
+  g.add(hairs(700, () => {
+    const s = r() < 0.5 ? -1 : 1, k = r() * 2 - 1, y = k * 0.0028;
+    const p = new THREE.Vector3(s * (0.0022 + r() * 0.0004), y, 0.0010 + r() * 0.0008);
+    const dir = new THREE.Vector3(s * (0.7 + r() * 0.5), -0.25 - 0.5 * r() + 0.3 * k, 0.05 + r() * 0.2);
+    const len = (0.0006 + r() * 0.0014) * (1 - 0.5 * k * k);
+    return { p, dir, len, width: 0.00003, color: hsl(24, 20, 7 + r() * 8) };
   }, hairMat));
 
   // ---------- abdomen: eight soft segments, hairy; pale underneath ----------
@@ -149,16 +156,18 @@ export function buildBody() {
   abdomen.rotation.x = deg(-6);
   g.add(abdomen);
   g.userData.abdomen = abdomen;
-  abdomen.add(hairs(5000, () => {
+  abdomen.add(hairs(9000, () => {
     const t = r(), a = r() * Math.PI * 2, rad = absRadius(t);
     if (rad < 0.0004) return null;
     const n = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
     const p = new THREE.Vector3(n.x * rad, -0.0035 - (1 - t) * AL, n.z * rad);
-    // Short, lying flat toward the tip; pale tan below, dark above, darker at segment joints.
-    const dir = n.clone().multiplyScalar(0.35).add(new THREE.Vector3(0, -1, 0)).addScaledVector(new THREE.Vector3(r() - 0.5, 0, r() - 0.5), 0.3);
+    // Short, lying flat toward the tip; pale tan below, dark above; shorter and darker at the joints
+    // between the eight segments, so the rings show through the hair (est., from side photos).
+    const dir = n.clone().multiplyScalar(0.3).add(new THREE.Vector3(0, -1, 0)).addScaledVector(new THREE.Vector3(r() - 0.5, 0, r() - 0.5), 0.2);
+    const joint = Math.pow(Math.abs(Math.sin(t * Math.PI * 8)), 4); // where absRadius narrows
     const below = n.z < -0.35;
-    const color = below ? hsl(36, 30, 45 + r() * 15) : hsl(24, 22, 9 + r() * 9);
-    return { p, dir, len: 0.0006 * (0.6 + r() * 0.6), width: 0.000035, color };
+    const color = below ? hsl(36, 30, (45 + r() * 15) * (1 - 0.4 * joint)) : hsl(24, 22, (8 + r() * 8) * (1 - 0.75 * joint));
+    return { p, dir, len: 0.0006 * (0.6 + r() * 0.6) * (1 - 0.6 * joint), width: 0.00003, color };
   }, hairMat));
 
   // ---------- head ----------
