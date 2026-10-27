@@ -2,15 +2,13 @@ import * as THREE from 'three/webgpu';
 import { uniform, screenUV, screenSize, time, vec2, vec3, mix, step, smoothstep, max, min, hash, sqrt, equal, sin, cos } from 'three/tsl';
 
 // The butterfly redrawn as a screen print: a green dot-matrix dither, a blue halftone of big dots,
-// black pixel marks on white (a dot, a cross or a square per cell, by darkness), liquid chrome, or
-// diagonal dashes on grey, thicker where darker. Only the butterfly's pixels change (a mask written by its materials
+// black pixel marks on white (a dot, a cross or a square per cell, by darkness) or liquid chrome. Only the butterfly's pixels change (a mask written by its materials
 // in the scene pass), in square cells read from the rendered frame at their centre, so its silhouette
 // turns blocky.
 
-export const STYLES = ['dots', 'halftone', 'pixels', 'chrome', 'dashes'];
-const CELL = { dots: [3, 3], halftone: [9, 9], pixels: [6, 6], chrome: [1, 1], dashes: [16, 8] }; // CSS px (dashes: along, across)
+export const STYLES = ['dots', 'halftone', 'pixels', 'chrome'];
+const CELL = { dots: [3, 3], halftone: [9, 9], pixels: [6, 6], chrome: [1, 1] }; // CSS px
 const COLOUR = { dots: vec3(0.3, 1, 0.35), halftone: vec3(0.05, 0.35, 1) };
-const S = Math.SQRT1_2;
 
 export function buildDigital({ colour, mask }) {
   const dpr = uniform(1);
@@ -18,12 +16,8 @@ export function buildDigital({ colour, mask }) {
   function apply(base, style) {
     const P = screenUV.mul(screenSize); // physical px
     const cellPx = vec2(...CELL[style]).mul(dpr);
-    // Dashes run on a grid turned 45° (along "/"), the rest on the screen's.
-    const turn = style === 'dashes';
-    const Q = turn ? vec2(P.x.sub(P.y), P.x.add(P.y)).mul(S) : P;
-    const cell = Q.div(cellPx).floor(), local = Q.div(cellPx).fract();
-    const qc = cell.add(0.5).mul(cellPx);
-    const at = turn ? vec2(qc.x.add(qc.y), qc.y.sub(qc.x)).mul(S) : qc;
+    const cell = P.div(cellPx).floor(), local = P.div(cellPx).fract();
+    const at = cell.add(0.5).mul(cellPx);
     const uv = at.div(screenSize);
     const on = step(0.5, mask.sample(uv).r);
     // Brightness as the strongest channel: the saturated blue reads dark in luminance.
@@ -49,7 +43,7 @@ export function buildDigital({ colour, mask }) {
       const mark = mid(sub.x).mul(mid(sub.y)).mul(step(1, level))
         .max(mid(sub.x).max(mid(sub.y)).mul(step(2, level))).max(step(3, level)).mul(step(sub.x, 2)).mul(step(sub.y, 2));
       print = mix(vec3(0.9), vec3(0.02), mark);
-    } else if (style === 'chrome') {
+    } else {
       // Brightness read through a slowly wobbling lens and folded into chrome bands: black, silver-blue,
       // white glints, and a thin orange rim where a band turns dark.
       const wobble = vec2(sin(P.y.div(dpr.mul(37)).add(time.mul(0.8))), sin(P.x.div(dpr.mul(53)).sub(time.mul(0.6)))).mul(dpr.mul(6));
@@ -60,11 +54,6 @@ export function buildDigital({ colour, mask }) {
       const rim = smoothstep(0.12, 0.22, band).sub(smoothstep(0.22, 0.34, band));
       print = mix(vec3(0.01), vec3(0.62, 0.74, 0.9), smoothstep(0.45, 0.9, band))
         .add(smoothstep(0.88, 0.98, band)).add(vec3(1, 0.42, 0.08).mul(rim).mul(1.5));
-    } else {
-      // A dash along each cell, thicker where darker.
-      const half = ink.mul(ink).mul(0.36).add(0.05);
-      const dash = step(local.x.sub(0.5).abs(), 0.36).mul(step(local.y.sub(0.5).abs(), half));
-      print = mix(vec3(0.55), vec3(0.04), dash);
     }
     return mix(base, print, on);
   }

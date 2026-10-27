@@ -163,7 +163,7 @@ const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode() });
 overlay.toggle(params.get('fx') === 'on');
 
 // The butterfly as a screen print (digital.js): D steps through the styles and off, ?print=dots|
-// halftone|pixels|chrome|dashes to start with one. The butterfly's materials always write a mask beside the colour
+// halftone|pixels|chrome to start with one. The butterfly's materials always write a mask beside the colour
 // (switching the scene pass's outputs at run time breaks the pipelines already built for the rest).
 scenePass.setMRT(mrt({ output, mask: float(0) }));
 scenePass.getTexture('mask').type = THREE.UnsignedByteType;
