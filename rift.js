@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, floor, hash, select } from 'three/tsl';
+import { attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, floor, hash, select } from 'three/tsl';
 
 // Only the butterfly is real. It stands on a wall built of lines: square columns drawn as
 // outlines, their tops level only under the butterfly's feet and, all around, at scattered depths
@@ -60,9 +60,8 @@ function columnsGeometry(cells) {
     .setAttribute('cell', new THREE.Float32BufferAttribute(cell, 2));
 }
 
-export function buildRift(camera) {
-  const centre = uniform(new THREE.Vector2()), radius = uniform(0);
-
+// The columns stand where the feet are: centre and radius are the uniforms main.js shares with every wall.
+export function buildRift(camera, { centre, radius }) {
   // ---------- the wall of lines ----------
   const cell = attribute('cell', 'vec2'), g = positionGeometry;
   const d = cell.sub(centre).length();
@@ -111,17 +110,20 @@ export function buildRift(camera) {
   }
   fit();
 
+  return { wall: new THREE.Group().add(lines, faces), envWall: new THREE.Group().add(envLines, envFaces), fit };
+}
+
+// Shared by every wall: the shadow under the butterfly, the specks in the space behind and, for the
+// environment capture, the dark behind the wall.
+export function buildSpace({ centre, radius }) {
   // Shadows on the platform: a surface that draws nothing but the shadow, over the lines behind it.
   const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowNodeMaterial({ opacity: 0.7 }));
   shadowCatcher.receiveShadow = true;
   shadowCatcher.renderOrder = 1;
-  const columns = new THREE.Group().add(lines, faces);
-  const wall = new THREE.Group().add(columns, shadowCatcher);
 
-  // ---------- the space behind ----------
-  // Nothing is drawn for it: the camera always faces the wall, so the scene background (set to VOID
-  // in main.js) is all that shows. Depth comes from specks drifting slowly away, shrinking below a
-  // pixel long before they stop.
+  // The space behind: nothing is drawn for it, as the camera always faces the wall, so the scene
+  // background (set to VOID in main.js) is all that shows. Depth comes from specks drifting slowly
+  // away, shrinking below a pixel long before they stop.
   const FAR = 50;
   const r = Math.random;
   const SPECKS = 3000;
@@ -137,11 +139,9 @@ export function buildRift(camera) {
     return sp;
   });
 
-  function update(dt, cx, cy, rad) {
-    centre.value.set(cx, cy);
-    radius.value = rad;
-    shadowCatcher.position.set(cx, cy, 0);
-    shadowCatcher.scale.setScalar(Math.max(rad * 2.6, 1e-6));
+  function update(dt) {
+    shadowCatcher.position.set(centre.value.x, centre.value.y, 0);
+    shadowCatcher.scale.setScalar(Math.max(radius.value * 2.6, 1e-6));
     for (let i = 0; i < SPECKS; i++) {
       const sp = drift[i];
       sp.pos.z -= sp.speed * dt;
@@ -156,8 +156,6 @@ export function buildRift(camera) {
   // but for the lines. Uniform, and only ever seen blurred, so the dark can be a plane.
   const envBehind = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshBasicNodeMaterial({ color: VOID }));
   envBehind.position.z = -0.05;
-  const envColumns = new THREE.Group().add(envLines, envFaces);
-  const envWall = new THREE.Group().add(envColumns, envBehind);
 
-  return { wall, columns, space: specks, envWall, envColumns, update, fit };
+  return { group: new THREE.Group().add(shadowCatcher, specks), specks, envBehind, update };
 }

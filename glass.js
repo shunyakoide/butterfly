@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { uniform, attribute, positionGeometry, normalView, positionViewDirection, time, smoothstep, mix, vec3, exp, fract, sin } from 'three/tsl';
+import { attribute, positionGeometry, normalView, positionViewDirection, time, smoothstep, mix, vec3, exp, fract, sin } from 'three/tsl';
 import { footprint } from './circuit.js';
 
 // A third wall: the face of a crystal block, in silver and white. Glass tiles make the face the
@@ -101,8 +101,7 @@ function mazeGeometry(camera) {
     .setAttribute('seed', new THREE.Float32BufferAttribute(seed, 1));
 }
 
-export function buildGlass(camera) {
-  const centre = uniform(new THREE.Vector2()), radius = uniform(0);
+export function buildGlass(camera, { centre, radius }) {
   const TINT = vec3(0.75, 0.88, 0.95); // silver with a breath of cyan
 
   // Shared by faces and edges: each box slides back and forth on its own slow cycle, except where the
@@ -164,9 +163,5 @@ export function buildGlass(camera) {
   }
   fit();
 
-  function update(cx, cy, rad) {
-    centre.value.set(cx, cy);
-    radius.value = rad;
-  }
-  return { wall, envWall, update, fit };
+  return { wall, envWall, fit };
 }

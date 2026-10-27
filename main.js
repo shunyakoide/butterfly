@@ -7,7 +7,7 @@ import { film } from 'three/addons/tsl/display/FilmNode.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { Butterfly, REST_HEIGHT } from './butterfly.js';
 import { morphoPattern } from './pattern.js';
-import { buildRift, VOID } from './rift.js';
+import { buildRift, buildSpace, VOID } from './rift.js';
 import { buildCircuit } from './circuit.js';
 import { buildGlass } from './glass.js';
 import { buildOverlay } from './fx.js';
@@ -39,26 +39,26 @@ camera.position.set(0.1, -0.12, 0.25);
 camera.lookAt(0, 0.005, 0);
 const cameraRest = camera.quaternion.clone(); // the view is fixed; only the hand-held sway turns it
 
-// ---------- wall: lines around the butterfly, and the space behind (rift.js) ----------
+// ---------- walls (rift/circuit/glass.js), and the space behind them (rift.js) ----------
 
-const rift = buildRift(camera);
-const circuit = buildCircuit(camera);
-const glass = buildGlass(camera);
-scene.add(rift.wall, rift.space, circuit.wall, glass.wall);
 // Three walls to choose from: the columns, circuitry or a crystal block (?wall=circuit|glass, or W to
-// cycle). The shadow and the space behind are shared; the specks take each wall's colour.
-const WALLS = ['columns', 'circuit', 'glass'];
+// cycle). The shadow and the space behind are shared; the specks take each wall's colour. All of them
+// answer where the feet are, through one pair of uniforms set in the loop.
+const feet = { centre: uniform(new THREE.Vector2()), radius: uniform(0) };
+const walls = { columns: buildRift(camera, feet), circuit: buildCircuit(camera, feet), glass: buildGlass(camera, feet) };
+const space = buildSpace(feet);
+scene.add(space.group, ...Object.values(walls).map((w) => w.wall));
+const WALLS = Object.keys(walls);
 const SPECKS = { columns: 0xffffff, circuit: 0xffb070, glass: 0xd8e4ee };
 let wallKind = WALLS.includes(params.get('wall')) ? params.get('wall') : 'columns';
 function showWall() {
-  rift.columns.visible = rift.envColumns.visible = wallKind === 'columns';
-  circuit.wall.visible = circuit.envWall.visible = wallKind === 'circuit';
-  glass.wall.visible = glass.envWall.visible = wallKind === 'glass';
-  rift.space.material.color.set(SPECKS[wallKind]);
+  for (const [kind, w] of Object.entries(walls)) w.wall.visible = w.envWall.visible = kind === wallKind;
+  space.specks.material.color.set(SPECKS[wallKind]);
 }
 showWall();
-// Where the wall was: 1.6 m square, for picking points on it (most of it is no longer drawn).
+// Where the wall was: a 0.8 m square, for picking points on it (most of it is no longer drawn).
 const wallPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+const ray = new THREE.Raycaster();
 function onWall() {
   const p = ray.ray.intersectPlane(wallPlane, new THREE.Vector3());
   return p && Math.abs(p.x) < 0.4 && Math.abs(p.y) < 0.4 ? p : null;
@@ -81,6 +81,17 @@ sun.shadow.radius = 3;
 scene.add(sun, sun.target);
 // The shadow camera covers only ±25 cm, so the light follows the butterfly (see the loop).
 const sunDir = sun.position.clone().normalize();
+const sunAngles = { az: Math.atan2(sunDir.x, sunDir.z), el: Math.asin(sunDir.y) };
+function placeSun() {
+  const c = Math.cos(sunAngles.el);
+  sunDir.set(Math.sin(sunAngles.az) * c, Math.sin(sunAngles.el), Math.cos(sunAngles.az) * c);
+}
+// ?sun=az,el in degrees (az from the wall normal toward +x), for repeatable comparisons.
+const sunParam = params.get('sun');
+if (sunParam) {
+  [sunAngles.az, sunAngles.el] = sunParam.split(',').map((v) => deg(+v));
+  placeSun();
+}
 
 // ---------- environment: the garden HDRI as seen from the butterfly, wall included ----------
 
@@ -111,13 +122,15 @@ scene.background = new THREE.Color(VOID);
 scene.environmentIntensity = ENV;
 
 // The butterfly sits a few mm from the wall: the sky is only in front, behind is dark but for the
-// glowing lines. So its environment is captured from where it is, in a scene with just the sky and
-// the line wall.
+// glowing walls. So its environment is captured from where it is, in a scene with just the sky and
+// the walls.
 const pmrem = new THREE.PMREMGenerator(renderer);
 const envScene = new THREE.Scene();
 envScene.background = hdr;
-envScene.add(rift.envWall, circuit.envWall, glass.envWall);
+envScene.add(space.envBehind, ...Object.values(walls).map((w) => w.envWall));
 let envTarget = null;
+// What the last capture was taken for; radius -1 forces a new one.
+const envAt = { sun: new THREE.Vector3(), pos: new THREE.Vector3(0, 0, -1), radius: 0 };
 function captureEnvironment(pos) {
   perfAt.captures++;
   const rot = sunAngles.az - hdrSunAz;
@@ -219,9 +232,10 @@ function wanderPoint() {
 const state = {
   mode: 'rest',
   rest: restPose(0, 0, deg(80)),
-  curve: null, s: 0, dist: 0, length: 1, speed: 1,
+  curve: null, dist: 0, length: 1, speed: 1,
   phase: 0, timer: 0, flapping: 1, flap: 1, bout: 3, glide: 0, alt: 0,
   restAngle: deg(10), restTarget: deg(10), restSwitch: rand(5, 10), lean: 0, leanTarget: deg(rand(-6, 6)),
+  idleT: 0, aim: [[0, 0, 0, 0], [0, 0, 0, 0]],
 };
 bf.group.position.copy(state.rest.pos);
 bf.group.quaternion.copy(state.rest.quat);
@@ -232,7 +246,6 @@ function startJourney(mode, points, speed) {
   state.length = state.curve.getLength();
   state.speed = speed;
   state.dist = 0;
-  state.s = 0;
   Object.assign(state, { t: 0, kick: 0, kickNow: 0, bank: 0, lastPos: null, vel: null, prevVel: null,
     wobble: [0, 1, 2, 3].map(() => Math.random() * Math.PI * 2) });
 }
@@ -277,7 +290,7 @@ function comeBack() {
   // Land somewhere inside the middle of the current view, whatever the aspect ratio.
   ray.setFromCamera(new THREE.Vector2(rand(-0.5, 0.5), rand(-0.45, 0.45)), camera);
   // Off the wall's edge (onWall gives null), land in the middle instead: comeBack runs every frame
-  // until it succeeds, so a throw here froze the butterfly while repainting its wings each frame.
+  // until it succeeds, so a throw here froze the butterfly.
   const spot = onWall() ?? new THREE.Vector3();
   state.rest = restPose(spot.x, spot.y, deg(rand(40, 140)));
   const p = state.rest.pos;
@@ -300,10 +313,9 @@ function fly(dt) {
   const fromWall = state.mode === 'takeoff' ? state.dist : state.length - state.dist;
   const v = THREE.MathUtils.lerp(START_SPEED, state.speed, THREE.MathUtils.smoothstep(fromWall, 0, 0.12));
   state.dist = Math.min(state.length, state.dist + v * dt);
-  const s = state.s = state.dist / state.length;
-  const u = s;
-  const pos = state.curve.getPointAt(u);
-  const tangent = state.curve.getTangentAt(Math.min(u, 0.999));
+  const s = state.dist / state.length;
+  const pos = state.curve.getPointAt(s);
+  const tangent = state.curve.getTangentAt(Math.min(s, 0.999));
 
   // How "airborne" we are: 0 standing on the wall, 1 in free flight.
   const air = state.mode === 'takeoff'
@@ -331,7 +343,7 @@ function fly(dt) {
     }
   }
   // Ease between the two so the wings settle into the glide instead of snapping.
-  state.flap = THREE.MathUtils.damp(state.flap ?? 1, state.flapping, 12, dt);
+  state.flap = THREE.MathUtils.damp(state.flap, state.flapping, 12, dt);
 
   const stroke = (ph) => STROKE_TOP - STROKE_AMP * (0.5 - 0.5 * Math.cos(ph));
   const fore = THREE.MathUtils.lerp(GLIDE_WINGS, stroke(state.phase), state.flap);
@@ -347,8 +359,8 @@ function fly(dt) {
   pos.y += (state.alt - BOB * Math.sin(state.phase) * state.flap) * air;
   // Irregular path: slow meander sideways and up/down (sums of incommensurate sines), plus the
   // per-bout jink, away from the wall only.
-  state.t = (state.t ?? 0) + dt;
-  state.kickNow = THREE.MathUtils.damp(state.kickNow ?? 0, state.kick ?? 0, 4, dt);
+  state.t += dt;
+  state.kickNow = THREE.MathUtils.damp(state.kickNow, state.kick, 4, dt);
   const t = state.t, w = state.wobble;
   const side = new THREE.Vector3().crossVectors(tangent, UP).normalize();
   const lat = WANDER * (0.6 * Math.sin(t * 5.1 + w[0]) + 0.4 * Math.sin(t * 8.3 + w[1])) + state.kickNow;
@@ -369,7 +381,7 @@ function fly(dt) {
   const accel = state.prevVel ? state.vel.clone().sub(state.prevVel).divideScalar(Math.max(dt, 1e-4)) : new THREE.Vector3();
   state.prevVel = state.vel.clone();
   const bankTarget = THREE.MathUtils.clamp(Math.atan2(accel.dot(new THREE.Vector3().crossVectors(heading, UP).normalize()), 9.8), -MAX_BANK, MAX_BANK);
-  state.bank = THREE.MathUtils.damp(state.bank ?? 0, bankTarget * free, 8, dt);
+  state.bank = THREE.MathUtils.damp(state.bank, bankTarget * free, 8, dt);
   const flight = basis(heading, UP);
   flight.multiply(tmpQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), state.bank));
   flight.multiply(tmpQ.setFromAxisAngle(X_AXIS, pitch));
@@ -400,7 +412,7 @@ function idle(dt) {
   if (pose) [state.restTarget, state.leanTarget] = pose === "open" ? [deg(4), deg(5)] : [CLOSED, 0];
   state.restAngle = THREE.MathUtils.damp(state.restAngle, state.restTarget, 5, dt);
   state.lean = THREE.MathUtils.damp(state.lean, state.leanTarget, 3, dt);
-  const t = state.idleT = (state.idleT ?? 0) + dt;
+  const t = state.idleT += dt;
 
   // As on a flower, the wings never quite settle: a slow pumping, open from the rest angle (or a
   // little open from closed), every ~2.5 s, by an amount that drifts between 12° and 30° (never so little it looks frozen) (est., from
@@ -415,7 +427,6 @@ function idle(dt) {
 
   // Antennae: mostly held still, each re-aimed by a few degrees every few seconds, now and then a
   // quick twitch that eases back (est.; no measured rates, but continuous swaying looks wrong).
-  state.aim ??= [[0, 0, 0, 0], [0, 0, 0, 0]];
   bf.antennae.forEach((a, i) => {
     const [yaw, pitch, wait] = state.aim[i];
     if (wait <= 0) state.aim[i] = [deg(rand(-6, 6)), deg(rand(-6, 6)), rand(2, 6), Math.random() < 0.25 ? 1 : 0];
@@ -429,7 +440,6 @@ function idle(dt) {
 
 // ---------- input ----------
 
-const ray = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
 function hitsButterfly(e) {
   ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
@@ -438,18 +448,6 @@ function hitsButterfly(e) {
   return hit && hit.distanceTo(state.rest.pos) < 0.035;
 }
 // Drag moves the sun, and a tap (no drag) touches the butterfly. The view is fixed.
-
-const sunAngles = { az: Math.atan2(sunDir.x, sunDir.z), el: Math.asin(sunDir.y) };
-function placeSun() {
-  const c = Math.cos(sunAngles.el);
-  sunDir.set(Math.sin(sunAngles.az) * c, Math.sin(sunAngles.el), Math.cos(sunAngles.az) * c);
-}
-// ?sun=az,el in degrees (az from the wall normal toward +x), for repeatable comparisons.
-const sunParam = params.get('sun');
-if (sunParam) {
-  [sunAngles.az, sunAngles.el] = sunParam.split(',').map((v) => deg(+v));
-  placeSun();
-}
 let down = null;
 renderer.domElement.addEventListener('pointerdown', (e) => {
   down = { x: e.clientX, y: e.clientY };
@@ -482,9 +480,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
-  rift.fit();
-  circuit.fit();
-  glass.fit();
+  for (const w of Object.values(walls)) w.fit();
 });
 
 // ---------- loop ----------
@@ -502,7 +498,6 @@ function handheld(t) {
 // ?slow=0.1 plays time slower, for watching the wingbeats.
 const timeScale = +(params.get('slow') ?? 1);
 let realRadius = 0;
-const envAt = { sun: new THREE.Vector3(), pos: new THREE.Vector3(0, 0, -1), radius: 0 };
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 1 / 30) * timeScale;
   if (state.mode === 'rest') idle(dt);
@@ -511,15 +506,15 @@ renderer.setAnimationLoop(() => {
     if (state.timer <= 0) { bf.group.visible = true; comeBack(); }
   } else fly(dt);
 
-  // Keep the butterfly in focus wherever it is.
+  // The sun, and its shadow camera, follow the butterfly.
   sun.target.position.copy(bf.group.position);
   sun.position.copy(bf.group.position).addScaledVector(sunDir, 0.7);
   // The wall answers only where the feet are: it builds up after touchdown, around the resting spot,
   // and dies away at take-off; nothing follows the butterfly in flight.
   realRadius = THREE.MathUtils.damp(realRadius, state.mode === 'rest' ? 0.12 : 0, state.mode === 'rest' ? 2 : 5, dt);
-  rift.update(dt, state.rest.pos.x, state.rest.pos.y, realRadius);
-  circuit.update(state.rest.pos.x, state.rest.pos.y, realRadius);
-  glass.update(state.rest.pos.x, state.rest.pos.y, realRadius);
+  feet.centre.value.set(state.rest.pos.x, state.rest.pos.y);
+  feet.radius.value = realRadius;
+  space.update(dt);
   // Re-capture the environment (six renders of the surroundings and a blur, ~50-150 ms) only while the
   // butterfly rests, when the sun turns, it has landed somewhere new or the wall around it has grown
   // by a third; in flight it is small and quick, and the hitches showed while the lighting did not.
@@ -531,6 +526,7 @@ renderer.setAnimationLoop(() => {
     captureEnvironment(envAt.pos.clone().setZ(Math.max(envAt.pos.z, 0.003)));
   }
   handheld(clock.elapsedTime);
+  // Keep the butterfly in focus wherever it is.
   focus.value = THREE.MathUtils.damp(focus.value, camera.position.distanceTo(bf.group.position), 6, dt);
   pipeline.render();
   overlay.update(clock.elapsedTime);
@@ -542,7 +538,7 @@ renderer.setAnimationLoop(() => {
 // Every half second the GPU time of all the frames since (the timestamp queries pile up until
 // resolved) is shown per frame, with the frame rate. window.app lets the console switch parts off to
 // see what they cost.
-if (perf) window.app = { renderer, pipeline, scene, camera, scenePass, rift, circuit, glass, overlay, bf, outputs: { sharp }, digital };
+if (perf) window.app = { renderer, pipeline, scene, camera, scenePass, walls, space, overlay, bf, outputs: { sharp }, digital };
 function showPerf() {
   perfAt.frames++;
   const now = performance.now();
