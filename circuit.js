@@ -1,9 +1,10 @@
 import * as THREE from 'three/webgpu';
 import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, select } from 'three/tsl';
 
-// A second wall, of circuitry: amber traces (a few teal) in layers that go back into the dark, with
-// pads at their ends and beams running straight back from some of them. Pulses of light run along
-// everything, and the traces under the butterfly glow while it rests there. All of it is one set of
+// A second wall, of circuitry: amber traces (some teal, some white) in layers that go back into the
+// dark, with pads at their ends and beams running straight back from some of them. Pulses of light
+// run along everything. The front layers show only around the resting butterfly, glowing under it;
+// elsewhere only the pulses in the depths are seen. All of it is one set of
 // line segments, drawn additively so crossings glow, and built only where the fixed camera sees it.
 
 const LAYERS = [0, -0.01, -0.03, -0.07, -0.15, -0.3, -0.6, -1.2]; // m, depth each layer of traces starts at
@@ -83,9 +84,16 @@ export function buildCircuit(camera) {
   const hot = exp(p.xy.sub(centre).length().div(0.04).pow(2).negate()).mul(radius.div(0.12)).mul(2);
   // Dimmer with depth; beams fade more slowly, so they reach far back.
   const depthFade = exp(p.z.mul(select(kind.equal(2), 0.8, 2)));
-  const tint = select(seed.greaterThan(0.85), vec3(0.3, 1, 0.7), vec3(1, 0.55, 0.18));
+  // Mostly amber, some teal, some white.
+  const tint = select(seed.greaterThan(0.85), vec3(0.3, 1, 0.7), select(seed.lessThan(0.2), vec3(0.9, 0.92, 1), vec3(1, 0.55, 0.18)));
+  // The front layers show only around the resting butterfly; elsewhere, and while it is away, only the
+  // pulses deeper back are left, moving in the dark.
+  const near = exp(p.xy.sub(centre).length().div(0.07).pow(2).negate()).mul(radius.div(0.12));
+  const front = smoothstep(-0.06, -0.02, p.z);
+  const shown = mix(1, near, front);
+  const base = s1.mul(0.12).add(0.03).mul(near.mul(front)); // the steady glow, only near the butterfly
   const material = new THREE.LineBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
-  material.colorNode = tint.mul(pulse.add(s1.mul(0.12).add(0.03)).add(pad).add(hot).mul(depthFade));
+  material.colorNode = tint.mul(pulse.add(base.add(pad.mul(near).mul(front))).add(hot).mul(depthFade).mul(shown));
 
   const lines = new THREE.LineSegments(undefined, material);
   lines.frustumCulled = false;
