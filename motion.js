@@ -12,12 +12,16 @@ export function buildMotion({ scene, camera, bf }) {
   scene.add(group);
   const flying = (mode) => mode === 'takeoff' || mode === 'landing';
 
-  // They write depth, or the depth of field takes them for the wall behind and blurs them away.
-  const dustMat = new THREE.MeshBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending });
+  // They write depth, or the depth of field takes them for the wall behind and blurs them away; but
+  // only where the star shows (the rest of the quad is discarded), or each would cut a square out of
+  // the blur and of the butterfly's mask.
+  const dustMat = new THREE.MeshBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending, alphaTest: 0.03 });
   // A star: a soft core and two thin crossed rays, fading to nothing at the quad's edge.
   const q = uv().sub(0.5), ax = q.x.abs(), ay = q.y.abs();
   const rays = exp(ax.mul(-30)).mul(exp(ay.mul(-6))).add(exp(ay.mul(-30)).mul(exp(ax.mul(-6))));
-  dustMat.colorNode = vec3(exp(q.dot(q).mul(-60)).add(rays.mul(0.8)).mul(q.length().mul(2).oneMinus().clamp(0, 1)).mul(3));
+  const star = exp(q.dot(q).mul(-60)).add(rays.mul(0.8)).mul(q.length().mul(2).oneMinus().clamp(0, 1));
+  dustMat.colorNode = vec3(star.mul(3));
+  dustMat.opacityNode = star;
   const dust = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), dustMat, DUST);
   dust.frustumCulled = false;
   const black = new THREE.Color(0, 0, 0);
