@@ -1,9 +1,9 @@
 import * as THREE from 'three/webgpu';
-import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, sin, hash, select } from 'three/tsl';
+import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, floor, hash, select } from 'three/tsl';
 
 // Only the butterfly is real. It stands on a wall built of lines: square columns drawn as
-// outlines, their tops level into a platform under the butterfly and, further out, dropped to
-// scattered depths, sinking away into a dark space that goes on without end, where specks of light
+// outlines, their tops level only under the butterfly's feet and, all around, at scattered depths
+// that keep changing, sinking away into a dark space that goes on without end, where specks of light
 // drift. The columns are placed in the vertex shader, so the platform forms wherever the butterfly
 // is; when it leaves, the whole wall sinks, and rises again when it returns. The lines glow (the
 // only light back there), the butterfly's shadow still falls on the platform, and both reach the
@@ -12,7 +12,7 @@ import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp,
 export const VOID = 0x010103; // the colour of the space behind
 const SPAN = 1.0;   // m, extent of the wall searched for visible columns
 const CELL = 0.005; // m, column pitch; each column is drawn 84% of it wide, so they read apart
-const DEEPEST = 0.33; // m, how far back a column's foot can reach (sink + post length, below)
+const DEEPEST = 0.3;  // m, how far back a column's foot can reach (sink + post length, below)
 
 // The camera never moves, so only columns that show in it are built: a column is kept when the box
 // spanned by its top and its deepest foot, on screen, overlaps the frame (with a margin for the sway).
@@ -66,14 +66,20 @@ export function buildRift(camera) {
   // ---------- the wall of lines ----------
   const cell = attribute('cell', 'vec2'), g = positionGeometry;
   const d = cell.sub(centre).length();
-  const h = hash(cell.x.mul(7919).add(cell.y.mul(104729)));
+  // hash() truncates its seed to an unsigned integer (negatives become 0), so seed it with the column's
+  // grid index, counted from the wall's corner.
+  const ij = cell.add(SPAN / 2).div(CELL).floor(), key = ij.x.add(ij.y.mul(1024));
+  const h = hash(key);
   // 0 on the platform, 1 well away from it (or everywhere, while the butterfly is away).
-  const drop = smoothstep(radius.mul(0.6), radius.mul(2.2).add(0.001), d);
-  // Platform tops jitter by ~1 mm; dropped columns sink 2-27 cm and bob slowly.
-  const sink = mix(h.mul(0.0015), h.mul(h).mul(0.25).add(0.02).add(sin(time.mul(0.5).add(h.mul(6.283))).mul(0.01)), drop);
-  const length = mix(0.004, 0.035, drop); // m, how far each column's posts reach back
+  const drop = smoothstep(radius.mul(0.2), radius.mul(0.6).add(0.001), d);
+  // Under the feet the tops jitter by ~1 mm; elsewhere each column holds a depth of 2-27 cm for a few
+  // seconds, then slides to a new one, on its own schedule, so the wall never settles.
+  const phase = time.mul(0.15).add(h.mul(7));
+  const depth = mix(hash(key.add(fract(floor(phase).mul(0.618)).mul(1e7))), hash(key.add(fract(floor(phase).add(1).mul(0.618)).mul(1e7))), smoothstep(0.6, 1, fract(phase)));
+  const sink = mix(h.mul(0.0015), depth.mul(depth).mul(0.25).add(0.02), drop);
+  const length = mix(0.004, 0.012, drop); // m, how far each column's posts reach back
   // Mixed looks: ~70% of columns are outlines, ~20% filled blocks, ~10% shrunk to a pixel-like dot.
-  const style = hash(cell.x.mul(3571).add(cell.y.mul(6197)));
+  const style = hash(key.add(300000));
   const filled = style.lessThan(0.2), dot = style.greaterThan(0.9);
   const around = (k) => vec3(cell.x.add(g.x.sub(cell.x).mul(k)), cell.y.add(g.y.sub(cell.y).mul(k)), 0);
   // Opaque, so nearer lines hide farther ones: added up, the platform blew out to white at grazing angles.
@@ -91,7 +97,7 @@ export function buildRift(camera) {
   // The filled tops: a dimmer, uneven blue just under the top edges; other columns' quads collapse.
   const faceMaterial = new THREE.MeshBasicNodeMaterial();
   faceMaterial.positionNode = around(select(filled, 1, 0)).add(vec3(0, 0, sink.negate().sub(0.0002)));
-  const shade = hash(cell.x.mul(1597).add(cell.y.mul(2741))).mul(0.5).add(0.3);
+  const shade = hash(key.add(600000)).mul(0.5).add(0.3);
   faceMaterial.colorNode = mix(new THREE.Color(VOID), vec3(0.2, 0.5, 0.8).mul(ring.add(0.7)).mul(shade), fade.mul(exp(sink.mul(-8))));
   const faces = new THREE.Mesh(undefined, faceMaterial);
   faces.frustumCulled = false;
