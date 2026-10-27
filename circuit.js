@@ -1,12 +1,12 @@
 import * as THREE from 'three/webgpu';
-import { uniform, attribute, positionGeometry, time, smoothstep, vec3, exp, fract, select } from 'three/tsl';
+import { uniform, attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, select } from 'three/tsl';
 
 // A second wall, of circuitry: amber traces (a few teal) in layers that go back into the dark, with
 // pads at their ends and beams running straight back from some of them. Pulses of light run along
 // everything, and the traces under the butterfly glow while it rests there. All of it is one set of
 // line segments, drawn additively so crossings glow, and built only where the fixed camera sees it.
 
-const LAYERS = [0, -0.008, -0.025, -0.06, -0.13, -0.28]; // m, depth of each layer of traces
+const LAYERS = [0, -0.01, -0.03, -0.07, -0.15, -0.3, -0.6, -1.2]; // m, depth each layer of traces starts at
 const TRACES = 70; // per layer: sparse, so most of the wall is dark
 // Eight directions in turning order, so a turn is ±1 step around the ring.
 const RING = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
@@ -37,18 +37,27 @@ function circuitGeometry(camera) {
     for (let t = 0; t < TRACES; t++) {
       const s = r();
       let x = snap(box.min.x + r() * (box.max.x - box.min.x)), y = snap(box.min.y + r() * (box.max.y - box.min.y));
-      let dir = 2 * Math.floor(r() * 4), along = 0;
-      if (r() < 0.12) seg([x, y, z], [x, y, z - 0.1 - 1.4 * r() * r()], 0, 1.5, s, 2);
+      let dir = 2 * Math.floor(r() * 4), along = 0, zt = z;
+      if (r() < 0.25) {
+        const len = 0.2 + 3 * r() * r();
+        seg([x, y, z], [x, y, z - len], 0, len, s, 2);
+      }
       for (let n = 3 + Math.floor(r() * 10); n > 0; n--) {
+        // Now and then the trace drops back a little, to carry on deeper: the circuit has thickness.
+        if (r() < 0.12) {
+          const dz = (4 + r() * 12) * g;
+          seg([x, y, zt], [x, y, zt - dz], along, along + dz, s, 0);
+          zt -= dz; along += dz;
+        }
         if (r() < 0.35) dir = (dir + (r() < 0.5 ? 1 : 7)) % 8;
         const [dx, dy] = RING[dir], len = (1 + Math.floor(r() * 5)) * g;
         const step = len * Math.hypot(dx, dy);
-        seg([x, y, z], [x + dx * len, y + dy * len, z], along, along + step, s, 0);
+        seg([x, y, zt], [x + dx * len, y + dy * len, zt], along, along + step, s, 0);
         x += dx * len; y += dy * len; along += step;
       }
       const a = g * 0.4;
-      seg([x - a, y, z], [x + a, y, z], along, along, s, 1);
-      seg([x, y - a, z], [x, y + a, z], along, along, s, 1);
+      seg([x - a, y, zt], [x + a, y, zt], along, along, s, 1);
+      seg([x, y - a, zt], [x, y + a, zt], along, along, s, 1);
     }
   }
   return new THREE.BufferGeometry()
@@ -62,16 +71,21 @@ export function buildCircuit(camera) {
   const centre = uniform(new THREE.Vector2()), radius = uniform(0);
   const u = attribute('u', 'float'), seed = attribute('seed', 'float'), kind = attribute('kind', 'float');
   const p = positionGeometry;
-  // A pulse every ~5 cm along each trace, running at 5-15 cm/s, bright enough (>1) for the bloom.
-  const pulse = smoothstep(0.9, 1, fract(u.mul(20).sub(time.mul(seed.mul(2).add(1))).add(seed.mul(10)))).mul(4);
+  // Pulses differ from trace to trace: 2.5-17 cm apart, from short bright sparks to long dim streaks
+  // (a bright head with a fading tail), and from a crawl to a dash (0.3-8 pulses a second). Bright
+  // enough (>1) for the bloom.
+  const s1 = fract(seed.mul(13.17)), s2 = fract(seed.mul(71.3)), s3 = fract(seed.mul(37.9));
+  const tail = mix(0.4, 0.97, s2);
+  const wave = fract(u.mul(mix(6, 40, s1)).sub(time.mul(s3.pow(3).mul(8).add(0.3))).add(seed.mul(10)));
+  const pulse = smoothstep(tail, 1, wave).mul(mix(1.5, 6, s2));
   const pad = select(kind.equal(1), 1.2, 0);
   // Under the resting butterfly the traces glow, as if it were drawing power from them.
   const hot = exp(p.xy.sub(centre).length().div(0.04).pow(2).negate()).mul(radius.div(0.12)).mul(2);
   // Dimmer with depth; beams fade more slowly, so they reach far back.
-  const depthFade = exp(p.z.mul(select(kind.equal(2), 1.5, 5)));
+  const depthFade = exp(p.z.mul(select(kind.equal(2), 0.8, 2)));
   const tint = select(seed.greaterThan(0.85), vec3(0.3, 1, 0.7), vec3(1, 0.55, 0.18));
   const material = new THREE.LineBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
-  material.colorNode = tint.mul(pulse.add(0.1).add(pad).add(hot).mul(depthFade));
+  material.colorNode = tint.mul(pulse.add(s1.mul(0.12).add(0.03)).add(pad).add(hot).mul(depthFade));
 
   const lines = new THREE.LineSegments(undefined, material);
   lines.frustumCulled = false;
