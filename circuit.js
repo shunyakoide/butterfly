@@ -82,14 +82,14 @@ export function buildCircuit(camera) {
   const pad = select(kind.equal(1), 1.2, 0);
   // While the butterfly rests, a core of light burns under its feet, lighting the traces on every
   // layer around it, as if the butterfly drew power from it.
-  const hot = exp(p.xy.sub(centre).length().div(0.05).pow(2).negate()).mul(radius.div(0.12)).mul(3);
+  const hot = exp(p.xy.sub(centre).length().div(0.03).pow(2).negate()).mul(radius.div(0.12)).mul(3);
   // Dimmer with depth; beams fade more slowly, so they reach far back.
   const depthFade = exp(p.z.mul(select(kind.equal(2), 0.8, 2)));
   // Mostly amber, some teal, some white.
   const tint = select(seed.greaterThan(0.85), vec3(0.3, 1, 0.7), select(seed.lessThan(0.2), vec3(0.9, 0.92, 1), vec3(1, 0.55, 0.18)));
   // The front layers show only around the resting butterfly; elsewhere, and while it is away, only the
   // pulses deeper back are left, moving in the dark.
-  const near = exp(p.xy.sub(centre).length().div(0.07).pow(2).negate()).mul(radius.div(0.12));
+  const near = exp(p.xy.sub(centre).length().div(0.04).pow(2).negate()).mul(radius.div(0.12));
   const front = smoothstep(-0.06, -0.02, p.z);
   const shown = mix(1, near, front);
   const base = s1.mul(0.12).add(0.03).mul(near.mul(front)); // the steady glow, only near the butterfly
