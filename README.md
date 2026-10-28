@@ -20,16 +20,15 @@ WebGPU に対応したブラウザ(Chrome / Edge / Safari 26 以降など)で開
 - ドラッグ: 太陽の向き
 - 左下の WALL / FX / PRINT(またはキーの W / E / D): 押すたびに次へ切り替わる
   - WALL: 壁(柱 / 回路 / ガラス)
-  - FX: 分析表示(オフ / scan / measure / track / spectrum / target)
+  - FX: 画面の描き直し(オフ / scan / dither / plot / cloud)
     - scan: 蝶を追う点と線・数値、サーモ / X 線風の拡大枠
-    - measure: 開長と前翅長の寸法線、10 mm の目盛り、直近 2 秒の翅の角度のグラフと羽ばたきの周波数
-    - track: 飛んだ跡、飛び立ちと着地の位置、速度、予定の経路と着地までの時間、次に飛び立つまでの時間
-    - spectrum: 前翅の青の反射スペクトル。見る角度と太陽の向きで、ピークの波長と強さが変わる(翅の構造色と同じ式)
-    - target: 蝶を追いかける枠。止まると LOCK、飛ぶと TRACK、画面から出ると LOST
+    - dither: 画面全体を灰色の六角形の網点にし、黄色い文字が格子の上で点いたり消えたりする
+    - plot: 黒地に目盛りの付いたグラフ。景色は灰色の点の散らばりになり、翅(面積)・腹(振れ)・太陽(高度)が黄緑の円になって胸とつながる
+    - cloud: 蝶を 3D スキャンの点群で描き、翅の縁から点が糸のように風に流れる。背景は黒
   - PRINT: 蝶の描き方(オフ / 緑の点描 / 青の網点 / 白地に黒のドット / クローム / ホログラム / 等高線 / サーモ)
 - いつも出る演出: 飛び立つときに蝶がブロックに崩れて流れる、翅から舞い落ちながら瞬く、星形のきらめき(鱗粉)
 
-URL パラメータ: `?pose=open|closed`(止まっているときの翅)、`?sun=方位,仰角`(度)、`?species=peleides|menelaus|achilles|helenor|rhetenor|cypris|sulkowskyi`(種を決めて開く)、`?wear=0..1`(翅の擦り切れ)、`?slow=0.1`(スローモーション。0 より大きく 1 以下)、`?wall=circuit|glass`(回路・ガラスの壁で始める)、`?fx=scan|measure|track|spectrum|target`(分析表示をオンで始める。`on` は scan)、`?print=dots|halftone|pixels|chrome|holo|topo|thermal`(プリント表示で始める)、`?perf`(fps と 1 コマの GPU 時間を左下に出す。`window.app` から各部分を切り替えて重さを比べられる)。
+URL パラメータ: `?pose=open|closed`(止まっているときの翅)、`?sun=方位,仰角`(度)、`?species=peleides|menelaus|achilles|helenor|rhetenor|cypris|sulkowskyi`(種を決めて開く)、`?wear=0..1`(翅の擦り切れ)、`?slow=0.1`(スローモーション。0 より大きく 1 以下)、`?wall=circuit|glass`(回路・ガラスの壁で始める)、`?fx=scan|dither|plot|cloud`(FX をオンで始める。`on` は scan)、`?print=dots|halftone|pixels|chrome|holo|topo|thermal`(プリント表示で始める)、`?perf`(fps と 1 コマの GPU 時間を左下に出す。`window.app` から各部分を切り替えて重さを比べられる)。
 
 ## ファイル
 
@@ -45,7 +44,8 @@ URL パラメータ: `?pose=open|closed`(止まっているときの翅)、`?sun
 | `rift.js` | 柱の壁と、その奥の空間 |
 | `circuit.js` | 回路の壁 |
 | `glass.js` | ガラスの壁 |
-| `fx.js` | 分析表示のオーバーレイ |
+| `fx.js` | FX(画面の描き直しとオーバーレイ) |
+| `cloud.js` | FX の cloud(点群の蝶と、流れる糸) |
 | `digital.js` | 蝶の描き方の切り替え(D)と、飛び立ちの崩れ |
 | `motion.js` | 翅から舞うきらめき(鱗粉) |
 | `noise.js` | ノイズと乱数 |

@@ -173,12 +173,6 @@ const wearParam = params.get('wear'), wear = Number.isFinite(+wearParam) ? THREE
 const bf = new Butterfly({ ...morphoPattern(undefined, params.get('species')), ...(wearParam && wear !== null && { wear }) });
 scene.add(bf.group);
 
-// The analysis overlays (fx.js): E steps through them and off, ?fx=scan|measure|track|spectrum|target
-// (or on, for scan) to start with one. The scan insets go in before the vignette and grain, so they
-// read as part of the same photographed frame. (flight is built below; the overlay reads it per frame.)
-const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode(), state: () => flight.state, sun: sunDir });
-overlay.set(params.get('fx') === 'on' ? 'scan' : MODES.includes(params.get('fx')) ? params.get('fx') : null);
-
 // The butterfly as a screen print (digital.js): D steps through the styles and off, ?print=dots|
 // halftone|pixels|chrome|holo|topo|thermal to start with one. The butterfly's materials always write a mask beside the colour
 // (switching the scene pass's outputs at run time breaks the pipelines already built for the rest).
@@ -186,6 +180,12 @@ scenePass.setMRT(mrt({ output, mask: float(0) }));
 scenePass.getTexture('mask').type = THREE.UnsignedByteType;
 const bfMask = mrt({ mask: float(1) });
 bf.group.traverse((o) => { if (o.isMesh) o.material.mrtNode = bfMask; });
+// The overlays (fx.js): E steps through them and off, ?fx=scan|dither|plot|cloud (or on, for scan) to
+// start with one. They go in before the vignette and grain, so they read as part of the same
+// photographed frame.
+const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode(), smooth: blurred.getTextureNode(), mask: scenePass.getTextureNode('mask'), sun: sunDir,
+  pixelRatio: () => renderer.getPixelRatio() });
+overlay.set(params.get('fx') === 'on' ? 'scan' : MODES.includes(params.get('fx')) ? params.get('fx') : null);
 const digital = buildDigital({ pixelRatio: () => renderer.getPixelRatio(), colour, smooth: blurred.getTextureNode(), mask: scenePass.getTextureNode('mask') });
 // Glowing scales shed from the wings (motion.js), always on.
 const motion = buildMotion({ scene, camera, bf });
