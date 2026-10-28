@@ -247,12 +247,18 @@ export function buildBody() {
     pivot.position.set(s * 0.0006, HEAD.y + 0.0012, HEAD.z + 0.0015);
     const pts = [[0, 0, 0], [0.0024, 0.3, 0.002], [0.0056, 0.62, 0.0034], [0.0084, 0.95, 0.0038]]
       .map(([x, y, z]) => [s * x * 0.72, y * ANT * 0.97, z * 0.72]);
-    const radius = (t) => 0.00011 + 0.00017 * Math.pow(THREE.MathUtils.smoothstep(t, 0.6, 0.93), 1.5) - 0.0001 * THREE.MathUtils.smoothstep(t, 0.95, 1);
+    // The club swells from two thirds of the way out to about 2.5x the shaft (photos) and ends in
+    // a rounded tip; an open end read as a cut-off stick.
+    const radius = (t) => {
+      const club = 0.0001 + 0.00015 * THREE.MathUtils.smoothstep(t, 0.62, 0.9);
+      const e = Math.max(0, (t - 0.93) / 0.07);
+      return club * Math.sqrt(Math.max(0, 1 - e * e)) + 0.000005;
+    };
     const color = (t) => {
-      const ring = Math.pow(Math.abs(Math.sin(t * Math.PI * 40)), 12) * 0.08;
-      if (t < 0.06) return hsl(10, 30, 40);
-      if (t > 0.9) return hsl(25, 40, 25 + 20 * (t - 0.9) * 10);
-      return hsl(22, 25, 13 + ring * 100);
+      const ring = Math.pow(Math.abs(Math.sin(t * Math.PI * 40)), 12) * 0.06;
+      if (t < 0.06) return hsl(10, 30, 32);
+      if (t > 0.62) return hsl(24, 35, 9 + 9 * THREE.MathUtils.smoothstep(t, 0.75, 1)); // the club warms toward the tip
+      return hsl(22, 20, 8 + ring * 100);
     };
     pivot.add(new THREE.Mesh(taperTube(pts, radius, color, { seg: 160, radial: 8 }), tubeMat));
     g.add(pivot);
