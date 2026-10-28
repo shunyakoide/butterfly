@@ -162,7 +162,8 @@ const vignette = smoothstep(0.35, 0.95, screenUV.sub(0.5).length().mul(1.4)).mul
 
 // ?wear=0..1 overrides the random wear, for checking old, worn individuals.
 const wearParam = params.get('wear');
-const bf = new Butterfly({ ...morphoPattern(), ...(wearParam && { wear: +wearParam }) });
+// ?species=peleides|menelaus|achilles|helenor|rhetenor|cypris|sulkowskyi picks one; otherwise each load draws one at random.
+const bf = new Butterfly({ ...morphoPattern(undefined, params.get('species')), ...(wearParam && { wear: +wearParam }) });
 scene.add(bf.group);
 
 // The analysis overlay (fx.js): E to toggle, ?fx=on to start with it. Its insets go in before the

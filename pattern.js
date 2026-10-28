@@ -6,16 +6,38 @@ import { rng } from './noise.js';
 
 // ---------- pattern parameters ----------
 
-export function morphoPattern(seed = Math.floor(Math.random() * 1e9)) {
-  const r = rng(seed);
+// The Morpho species one butterfly may be drawn as, each with the ranges its parameters are drawn
+// from (all est., from photos; the shapes of wing and body stay those of peleides).
+//   hue, sat, light: the upperside blue; black: 0 = a thin edge .. 1 = a broad chocolate border;
+//   band: black wings crossed by a blue band instead of a blue wing in a border;
+//   white: a pale band across the outer wing; underLight: how pale the underside is.
+export const SPECIES = {
+  peleides:    { hue: [195, 210], sat: 95, light: [48, 56], black: [0.15, 0.4], spots: [2, 4], under: [22, 34], underLight: 1, eyes: [0.8, 1.2] },
+  menelaus:    { hue: [200, 214], sat: 95, light: [52, 60], black: [0, 0.08], spots: [0, 1], under: [22, 30], underLight: 1, eyes: [0.8, 1.1] },
+  achilles:    { hue: [196, 206], sat: 90, light: [46, 54], black: [0.6, 0.8], spots: [3, 4], band: [0.011, 0.026], under: [18, 28], underLight: 0.85, eyes: [0.9, 1.3] },
+  helenor:     { hue: [194, 204], sat: 90, light: [48, 56], black: [0.5, 0.7], spots: [3, 4], band: [0.009, 0.031], under: [20, 30], underLight: 0.95, eyes: [0.9, 1.2] },
+  rhetenor:    { hue: [202, 214], sat: 100, light: [50, 58], black: [0.05, 0.2], spots: [0, 2], white: 0.8, under: [28, 38], underLight: 1.5, eyes: [0.5, 0.8] },
+  cypris:      { hue: [204, 214], sat: 100, light: [46, 54], black: [0.1, 0.25], spots: [1, 3], white: 1, under: [24, 34], underLight: 1.2, eyes: [0.6, 0.9] },
+  sulkowskyi:  { hue: [196, 206], sat: 40, light: [74, 82], black: [0.05, 0.2], spots: [2, 4], under: [36, 46], underLight: 2.2, eyes: [0.5, 0.8] },
+};
+
+export function morphoPattern(seed = Math.floor(Math.random() * 1e9), species) {
+  const r = rng(seed), names = Object.keys(SPECIES);
+  species = SPECIES[species] ? species : names[Math.floor(r() * names.length)];
+  const S = SPECIES[species], range = ([a, b]) => a + r() * (b - a);
   return {
     seed,
-    hue: 195 + r() * 15,        // sky blue .. azure (photos of peleides: cyan-leaning, never violet)
-    light: 48 + r() * 8,
-    black: 0.15 + r() * 0.25,   // 0 = all blue (menelaus) .. 1 = mostly black with a blue band (achilles)
-    apexSpots: 2 + Math.floor(r() * 3),
-    underHue: 22 + r() * 12,    // bronze-brown underside
-    eyes: 0.8 + r() * 0.4,
+    species,
+    hue: range(S.hue),          // sky blue .. azure (cyan-leaning, never violet)
+    sat: S.sat,
+    light: range(S.light),
+    black: range(S.black),
+    apexSpots: Math.round(range(S.spots)),
+    band: S.band && [S.band[0] + (r() - 0.5) * 0.002, S.band[1] + (r() - 0.5) * 0.003],
+    white: S.white ?? 0,
+    underHue: range(S.under),   // bronze-brown underside
+    underLight: S.underLight,
+    eyes: range(S.eyes),
     wear: r() * 0.6,            // 0 = fresh .. 1 = old, with rubbed-off scales and torn margins
   };
 }
@@ -183,26 +205,64 @@ function finish(ctx, L, maskCtx, marks) {
 }
 
 // Upperside, after M. peleides photos: blue that glows pale cyan in the middle of each wing and
-// deepens to ultramarine toward the root, inside a soft-edged chocolate border.
+// deepens to ultramarine toward the root, inside a soft-edged chocolate border (or, in the banded
+// species, chocolate with a blue band).
 export function drawUpper(ctx, maskCtx, wing, p, isFore) {
   const r = rng(p.seed + (isFore ? 0 : 7));
   const L = begin(ctx, wing);
 
-  ctx.fillStyle = hsl(p.hue + 10, 85, p.light * 0.5);
+  ctx.fillStyle = hsl(p.hue + 10, p.sat * 0.9, p.light * 0.5);
   ctx.fillRect(BOX.x0, BOX.y0, BOX.size, BOX.size);
   const [gx, gy] = isFore ? [0.027, 0.011] : [0.024, -0.022];
   const glow = ctx.createRadialGradient(gx, gy, 0, gx, gy, 0.026);
-  glow.addColorStop(0, hsl(p.hue - 4, 90, Math.min(68, p.light + 12)));
-  glow.addColorStop(0.45, hsl(p.hue, 95, p.light));
-  glow.addColorStop(1, hsl(p.hue + 10, 90, p.light * 0.6, 0));
+  glow.addColorStop(0, hsl(p.hue - 4, p.sat * 0.95, Math.min(88, p.light + 12)));
+  glow.addColorStop(0.45, hsl(p.hue, p.sat, p.light));
+  glow.addColorStop(1, hsl(p.hue + 10, p.sat * 0.95, p.light * 0.6, 0));
   ctx.fillStyle = glow;
   ctx.fillRect(BOX.x0, BOX.y0, BOX.size, BOX.size);
   L.blur(0.002);
   for (let i = 0; i < 12; i++) {
-    ctx.fillStyle = hsl(p.hue + (r() - 0.5) * 14, 90, p.light * (0.8 + r() * 0.35), 0.2);
+    ctx.fillStyle = hsl(p.hue + (r() - 0.5) * 14, p.sat * 0.95, p.light * (0.8 + r() * 0.35), 0.2);
     ctx.beginPath();
     ctx.arc(r() * 0.045, (r() - 0.6) * 0.06, 0.003 + r() * 0.006, 0, Math.PI * 2);
     ctx.fill();
+  }
+  // A pale band across the outer wing (rhetenor, cypris): a patch in each cell between veins, at
+  // about the same distance from the root, so together they read as a band broken by the veins.
+  if (p.white) {
+    const rad = isFore ? 0.03 : 0.021;
+    // Near white and opaque: any blue left in it would get the structural lobe (see finish) and vanish.
+    ctx.fillStyle = hsl(p.hue, 12, 90, 0.97 * p.white);
+    L.blur(0.0006);
+    for (let i = 0; i < L.ends.length - 1; i++) {
+      const a0 = angleOf(L.ends[i]), a1 = angleOf(L.ends[i + 1]), a = (a0 + a1) / 2;
+      const rr = rad * (0.95 + r() * 0.1), half = Math.abs(a1 - a0) / 2 * rr;
+      ctx.beginPath();
+      ctx.ellipse(Math.cos(a) * rr, Math.sin(a) * rr, (isFore ? 0.0042 : 0.003) * (0.8 + r() * 0.4), half * 0.9, a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // Banded species (achilles, helenor): the wing is chocolate but for a blue band round the root,
+  // its outer edge bulging out in each cell between veins and drawn in at the veins (photos).
+  if (p.band) {
+    const [b0, b1] = p.band, ea = L.ends.map(angleOf), N = 240;
+    const edge = (a) => {
+      const gap = Math.min(...ea.map((e) => Math.abs(e - a)));
+      return b1 + 0.0022 * Math.min(1, gap / 0.12) + (r() - 0.5) * 0.0003;
+    };
+    const band = new Path2D();
+    band.rect(BOX.x0, BOX.y0, BOX.size, BOX.size);
+    for (let i = 0; i <= N; i++) {
+      const a = -Math.PI + (i / N) * Math.PI * 2;
+      (i ? band.lineTo : band.moveTo).call(band, Math.cos(a) * edge(a), Math.sin(a) * edge(a));
+    }
+    for (let i = N; i >= 0; i--) {
+      const a = -Math.PI + (i / N) * Math.PI * 2, rr = b0 + (r() - 0.5) * 0.0004;
+      band.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.fillStyle = hsl(22, 35, 8);
+    L.blur(0.0008);
+    ctx.fill(band, 'evenodd');
   }
   // Dark root, and the hindwing's hairy brown-grey inner margin.
   const root = ctx.createRadialGradient(0, 0, 0, 0, 0, 0.013);
@@ -254,7 +314,7 @@ export function drawUpper(ctx, maskCtx, wing, p, isFore) {
   // tan lunules plus a few white dots on the hindwing.
   const spotAt = (i, inset, rx, ry, color) => {
     const mid = L.ends[i].clone().add(L.ends[i + 1]).multiplyScalar(0.5);
-    const k = (mid.length() - w * inset) / mid.length();
+    const k = (mid.length() - Math.min(w, 0.008) * inset) / mid.length();
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.ellipse(mid.x * k, mid.y * k, rx, ry, angleOf(mid), 0, Math.PI * 2);
@@ -281,17 +341,18 @@ export function drawUpper(ctx, maskCtx, wing, p, isFore) {
   finish(ctx, L, maskCtx, marks);
 }
 
-// Underside, after M. peleides photos: mottled brown with cream zigzag bands, wavy submarginal
-// lines, and a row of eyespots parallel to the margin (3 on the forewing, 4 on the hindwing).
+// Underside, after M. peleides photos: mottled brown (paler in some species) with cream zigzag
+// bands, wavy submarginal lines, and a row of eyespots parallel to the margin (3 on the forewing,
+// 4 on the hindwing).
 export function drawUnder(ctx, wing, p, isFore) {
   const r = rng(p.seed + (isFore ? 13 : 29));
   const L = begin(ctx, wing);
-  const h = p.underHue;
+  const h = p.underHue, ul = (l) => Math.min(80, l * p.underLight);
 
   const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 0.045);
-  g.addColorStop(0, hsl(h, 30, 16));
-  g.addColorStop(0.5, hsl(h, 38, 27));
-  g.addColorStop(1, hsl(h + 4, 34, 22));
+  g.addColorStop(0, hsl(h, 30, ul(16)));
+  g.addColorStop(0.5, hsl(h, 38, ul(27)));
+  g.addColorStop(1, hsl(h + 4, 34, ul(22)));
   ctx.fillStyle = g;
   ctx.fillRect(BOX.x0, BOX.y0, BOX.size, BOX.size);
 
@@ -322,7 +383,7 @@ export function drawUnder(ctx, wing, p, isFore) {
   };
   // A pale tan median band, edged by cream and dark zigzags.
   L.blur(0.0015);
-  zigzag(0.0145, 0.0004, hsl(h + 8, 35, 42, 0.55), 0.005);
+  zigzag(0.0145, 0.0004, hsl(h + 8, 35, ul(42), 0.55), 0.005);
   L.blur(0.00015);
   zigzag(0.009, 0.0007, hsl(42, 50, 78, 0.95), 0.0011);
   zigzag(0.0175, 0.001, hsl(42, 45, 74, 0.85), 0.0009);
