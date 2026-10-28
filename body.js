@@ -357,8 +357,8 @@ export function buildBody() {
   g.add(knobs);
 
   // Bends the four walking legs ([left mid, left hind, right mid, right hind]) so each foot lands
-  // where asked: feet[i] = { ankle, tip } and up (the wall's normal) in this frame. Femur and tibia
-  // reach for the ankle, the knee kept in the plane through its rest position (two-bone IK); the
+  // where asked: feet[i] = { ankle, tip, knee? } and up (the wall's normal) in this frame. Femur and tibia
+  // reach for the ankle, the knee kept in the plane through the given knee point, or its rest position (two-bone IK); the
   // tarsus lies from there toward the tip. Without feet, the legs return to their rest pose.
   const m = new THREE.Matrix4();
   const place = (bone, a0, f0, a, f) => {
@@ -373,7 +373,7 @@ export function buildBody() {
       }
       const T = l.troch, to = feet[i].ankle.clone().sub(T);
       const d = THREE.MathUtils.clamp(to.length(), Math.abs(l.l1 - l.l2) + 1e-6, (l.l1 + l.l2) * 0.999), u = to.normalize();
-      const v = l.knee.clone().sub(T);
+      const v = (feet[i].knee ?? l.knee).clone().sub(T);
       v.addScaledVector(u, -v.dot(u)).normalize();
       const a = (l.l1 * l.l1 - l.l2 * l.l2 + d * d) / (2 * d);
       const K = T.clone().addScaledVector(u, a).addScaledVector(v, Math.sqrt(Math.max(0, l.l1 * l.l1 - a * a)));
@@ -386,6 +386,17 @@ export function buildBody() {
     knobs.instanceMatrix.needsUpdate = true;
   }
   pose();
-  g.userData.legs = { rest: legs.map((l) => ({ ankle: l.ankle, tip: l.tip })), pose };
+  // Foot targets for the air (flight.js): folded in under the body, the femur laid back along it, the
+  // tibia folded forward against it and the tarsus trailing (est.), and reaching out toward the wall
+  // before touchdown, a little further and more forward than standing (est.).
+  const tuck = legs.map((l) => {
+    const s = Math.sign(l.troch.x), ankle = l.troch.clone().add(new THREE.Vector3(s * 0.0006, -0.002, -0.0012));
+    return { ankle, tip: ankle.clone().add(new THREE.Vector3(s * 0.0004, -0.003, -0.0006)), knee: l.troch.clone().add(new THREE.Vector3(s * 0.0008, -0.0055, 0.0002)) };
+  });
+  const reach = legs.map((l) => {
+    const ankle = l.ankle.clone().add(new THREE.Vector3(0, 0.0012, -0.0008));
+    return { ankle, tip: ankle.clone().add(l.tip.clone().sub(l.ankle)), knee: l.knee };
+  });
+  g.userData.legs = { rest: legs.map((l) => ({ ankle: l.ankle, tip: l.tip, knee: l.knee })), tuck, reach, pose };
   return g;
 }

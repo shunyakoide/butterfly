@@ -71,6 +71,18 @@ const SETTLE_AT = 0.0006;            // m, how far a foot may trail its rest spo
 const ORDER = [1, 0, 3, 2];          // bf.legs: [left mid, left hind, right mid, right hind]; stepped hind, mid, hind, mid
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
+// Legs in the air. At take-off the mid and hind legs push off, their feet held on the wall as the
+// body rises and the knees open (Pieris rapae: by 0.4-1.1 rad within 18 ms, starting just before the
+// body moves; the forelegs stay folded: Bimbard et al. 2013, JEB 216:3551). Then they fold in under
+// the body for the flight (est.: drawn in against drag; no measurements found), and before
+// touchdown they reach out toward the wall (flies extend theirs on coming within a set distance of the
+// surface: van Breugel & Dickinson 2012; the distances here are est.).
+const PUSH = 0.004;                  // m the body rises before the feet let go: ~20 ms at START_SPEED
+const FOLD = 0.05;                   // m of flight over which the legs fold in after letting go (est.)
+const REACH = [0.06, 0.02];          // m before touchdown: from folded to reaching out (est.)
+const SETTLE = 0.004;                // m before touchdown: from reaching out to standing (est.)
+const BODY_UP = new THREE.Vector3(0, 0, 1);
+
 const tmpQ = new THREE.Quaternion();
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 
@@ -127,9 +139,9 @@ export function buildFlight({ bf, camera, pose, sun }) {
       wobble: [0, 1, 2, 3].map(() => Math.random() * Math.PI * 2) });
   }
 
+  // The feet stay on the wall for the push (airLegs).
   function takeOff() {
-    Object.assign(state, { walk: null, feet: null });
-    bf.legs.pose();
+    state.walk = null;
     const p = state.rest.pos;
     // The legs push off first, so the body leaves the wall before the wings give much lift.
     startJourney('takeoff', [
@@ -243,6 +255,8 @@ export function buildFlight({ bf, camera, pose, sun }) {
     // The abdomen swings against the wings: up on the downstroke, down on the upstroke (monarch, Pieris).
     bf.abdomen.rotation.x = deg(-6) - deg(15) * Math.sin(state.phase) * state.flap * air;
 
+    airLegs();
+
     if (s >= 1) {
       if (state.mode === 'takeoff') { state.mode = 'away'; state.timer = 1.4; bf.group.visible = false; }
       else { state.mode = 'rest'; bf.abdomen.rotation.x = deg(-6); plant(); }
@@ -349,9 +363,32 @@ export function buildFlight({ bf, camera, pose, sun }) {
         f[key].lerpVectors(f.from[key], to, k).addScaledVector(WALL_N, STEP_LIFT * Math.sin(Math.PI * f.s));
       }
     });
+    bf.legs.pose(feetInBody(), WALL_N.clone().applyQuaternion(tmpQ.copy(bf.group.quaternion).invert()));
+  }
+
+  // The planted feet in the body's frame.
+  function feetInBody() {
     const inv = bf.group.matrixWorld.clone().invert();
-    bf.legs.pose(state.feet.map((f) => ({ ankle: f.ankle.clone().applyMatrix4(inv), tip: f.tip.clone().applyMatrix4(inv) })),
-      WALL_N.clone().applyQuaternion(tmpQ.copy(bf.group.quaternion).invert()));
+    return state.feet.map((f) => ({ ankle: f.ankle.clone().applyMatrix4(inv), tip: f.tip.clone().applyMatrix4(inv) }));
+  }
+
+  function airLegs() {
+    const L = bf.legs, smooth = THREE.MathUtils.smoothstep;
+    const blend = (a, b, k) => a.map((f, i) => ({ ankle: f.ankle.clone().lerp(b[i].ankle, k), tip: f.tip.clone().lerp(b[i].tip, k),
+      knee: (f.knee ?? L.rest[i].knee).clone().lerp(b[i].knee, k) }));
+    bf.group.updateMatrixWorld();
+    if (state.mode === 'takeoff') {
+      if (state.feet && state.dist < PUSH) {
+        L.pose(feetInBody(), WALL_N.clone().applyQuaternion(tmpQ.copy(bf.group.quaternion).invert()));
+        return;
+      }
+      if (state.feet) [state.letGo, state.feet] = [feetInBody(), null];
+      L.pose(blend(state.letGo, L.tuck, smooth(state.dist, PUSH, PUSH + FOLD)), BODY_UP);
+    } else {
+      const left = state.length - state.dist;
+      const out = blend(L.tuck, L.reach, 1 - smooth(left, REACH[1], REACH[0]));
+      L.pose(blend(out, L.rest, 1 - smooth(left, 0, SETTLE)), BODY_UP);
+    }
   }
 
   // Whether a tap at ndc touches the butterfly, which only answers while it rests.
