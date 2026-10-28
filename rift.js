@@ -17,7 +17,7 @@ const DEEPEST = 0.3;  // m, how far back a column's foot can reach (sink + post 
 export const PLATFORM = 0.12;
 
 // The camera never moves, so only columns that show in it are built: a column is kept when the box
-// spanned by its top and its deepest foot, on screen, overlaps the frame (with a margin for the sway).
+// spanned by its top and its deepest foot, on screen, overlaps the frame (with a small margin).
 function visibleCells(camera) {
   camera.updateMatrixWorld();
   const n = Math.round(SPAN / CELL), h0 = -SPAN / 2, p = new THREE.Vector3(), cells = [];

@@ -13,7 +13,7 @@ const TRACES = 40; // per layer: sparse, so most of the wall is dark
 // Eight directions in turning order, so a turn is ±1 step around the ring.
 const RING = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
 
-// Where the frame (with a margin for the sway) meets the plane at depth z.
+// Where the frame (with a small margin) meets the plane at depth z.
 export function footprint(camera, z) {
   camera.updateMatrixWorld();
   const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z), p = new THREE.Vector3();

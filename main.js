@@ -45,7 +45,6 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.01, 60); // far: the space behind the wall
 camera.position.set(0.1, -0.12, 0.25);
 camera.lookAt(0, 0.005, 0);
-const cameraRest = camera.quaternion.clone(); // the view is fixed; only the hand-held sway turns it
 
 // ---------- walls (rift/circuit/glass.js), and the space behind them (rift.js) ----------
 
@@ -250,15 +249,6 @@ addEventListener('resize', () => {
 // ---------- loop ----------
 
 const clock = new THREE.Clock();
-// Hand-held: the view sways by ~0.05° in slow, uneven drifts about its fixed direction.
-const HANDHELD = deg(0.05);
-function handheld(t) {
-  const sway = (a, b, c) => (Math.sin(t * a) * 0.5 + Math.sin(t * b + 1.7) * 0.3 + Math.sin(t * c + 4.1) * 0.2) * HANDHELD;
-  camera.quaternion.copy(cameraRest);
-  camera.rotateX(sway(0.9, 2.3, 5.1));
-  camera.rotateY(sway(0.7, 1.9, 4.3));
-  camera.rotateZ(sway(0.5, 1.3, 3.7) * 0.5);
-}
 // ?slow=0.1 plays time slower, for watching the wingbeats (0 < slow <= 1; anything else plays at 1).
 const slow = +params.get('slow'), timeScale = slow > 0 && slow <= 1 ? slow : 1;
 let realRadius = 0;
@@ -285,7 +275,6 @@ renderer.setAnimationLoop(() => {
     envAt.pos.copy(bf.group.position);
     captureEnvironment(envAt.pos.clone().setZ(Math.max(envAt.pos.z, 0.003)));
   }
-  handheld(clock.elapsedTime);
   // Keep the butterfly in focus wherever it is.
   focus.value = THREE.MathUtils.damp(focus.value, camera.position.distanceTo(bf.group.position), 6, dt);
   pipeline.render();
