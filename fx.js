@@ -161,9 +161,8 @@ export function buildOverlay({ camera, bf, frame }) {
     ctx.textAlign = 'right';
     ctx.fillText('BIOMETRIC OVERLAY', w - 20, 30);
     ctx.fillText(`${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())}  ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`, w - 20, 46);
+    ctx.fillText(`x ${bf.group.position.x.toFixed(4)}  y ${bf.group.position.y.toFixed(4)}  z ${bf.group.position.z.toFixed(4)}`, w - 20, h - 20);
     ctx.textAlign = 'left';
-    // Bottom left: the switches hold the bottom right.
-    ctx.fillText(`x ${bf.group.position.x.toFixed(4)}  y ${bf.group.position.y.toFixed(4)}  z ${bf.group.position.z.toFixed(4)}`, 20, h - 20);
   }
 
   return { apply, update, toggle: (on = !enabled) => (enabled = on), get enabled() { return enabled; } };
