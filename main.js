@@ -180,10 +180,10 @@ scenePass.setMRT(mrt({ output, mask: float(0) }));
 scenePass.getTexture('mask').type = THREE.UnsignedByteType;
 const bfMask = mrt({ mask: float(1) });
 bf.group.traverse((o) => { if (o.isMesh) o.material.mrtNode = bfMask; });
-// The overlays (fx.js): E steps through them and off, ?fx=scan|dither|plot|cloud (or on, for scan) to
+// The overlays (fx.js): E steps through them and off, ?fx=scan|dither (or on, for scan) to
 // start with one. They go in before the vignette and grain, so they read as part of the same
 // photographed frame.
-const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode(), smooth: blurred.getTextureNode(), mask: scenePass.getTextureNode('mask'), sun: sunDir,
+const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode(), smooth: blurred.getTextureNode(), mask: scenePass.getTextureNode('mask'),
   pixelRatio: () => renderer.getPixelRatio() });
 overlay.set(params.get('fx') === 'on' ? 'scan' : MODES.includes(params.get('fx')) ? params.get('fx') : null);
 const digital = buildDigital({ pixelRatio: () => renderer.getPixelRatio(), colour, smooth: blurred.getTextureNode(), mask: scenePass.getTextureNode('mask') });
