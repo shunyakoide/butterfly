@@ -227,16 +227,30 @@ addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = overButterfly(e) ? 'pointer' : '';
 });
-// Phones have no keys, so they get only the touch hints.
-hud.textContent = [`Morpho ${bf.species}`, '蝶に触れてみてください', 'ドラッグで太陽',
-  ...(matchMedia('(pointer: coarse)').matches ? [] : ['W で壁を切り替え', 'E で分析表示', 'D で描き方を切り替え'])].join(' ・ ');
+hud.textContent = [`Morpho ${bf.species}`, '蝶に触れてみてください', 'ドラッグで太陽'].join(' ・ ');
+// The switches, read out in the corner like a camera's settings: a row (or its key) steps to the next
+// option, and the pips show where it is among them.
+const SWITCHES = [
+  { key: 'w', label: 'WALL', options: WALLS, get: () => wallKind,
+    set: (v) => { wallKind = v; showWall(); envAt.radius = -1; } }, // re-capture: the light from the wall has changed
+  { key: 'e', label: 'FX', options: [false, true], get: () => overlay.enabled, set: (v) => overlay.toggle(v) },
+  { key: 'd', label: 'PRINT', options: [null, ...STYLES], get: () => printStyle, set: (v) => { printStyle = v; setOutput(); } },
+];
+const panel = document.getElementById('switches');
+for (const s of SWITCHES) {
+  const row = panel.appendChild(document.createElement('button'));
+  row.innerHTML = `<kbd>${s.key.toUpperCase()}</kbd><span>${s.label}</span><i></i><b></b>`;
+  s.show = () => {
+    const at = s.options.indexOf(s.get());
+    row.querySelector('i').innerHTML = s.options.map((_, k) => `<u${k === at ? ' class=on' : ''}></u>`).join('');
+    row.querySelector('b').textContent = typeof s.get() === 'boolean' || s.get() === null ? (s.get() ? 'on' : 'off') : s.get();
+  };
+  s.step = () => { s.set(s.options[(s.options.indexOf(s.get()) + 1) % s.options.length]); s.show(); };
+  row.addEventListener('click', s.step);
+  s.show();
+}
 addEventListener('keydown', (e) => {
-  if (e.key === 'e' || e.key === 'E') overlay.toggle();
-  if (e.key === 'd' || e.key === 'D') { printStyle = [...STYLES, null][(STYLES.indexOf(printStyle) + 1) % (STYLES.length + 1)]; setOutput(); }
-  if (e.key !== 'w' && e.key !== 'W') return;
-  wallKind = WALLS[(WALLS.indexOf(wallKind) + 1) % WALLS.length];
-  showWall();
-  envAt.radius = -1; // re-capture the environment: the light from the wall has changed
+  if (!e.metaKey && !e.ctrlKey && !e.altKey) SWITCHES.find((s) => s.key === e.key.toLowerCase())?.step();
 });
 
 addEventListener('resize', () => {
