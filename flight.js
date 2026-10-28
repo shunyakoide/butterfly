@@ -127,6 +127,8 @@ export function buildFlight({ bf, camera, pose, sun }) {
     bf.group.updateMatrixWorld();
     state.feet = bf.legs.rest.map((_, i) => ({ ...restFoot(i), s: 1 }));
     state.walkWait = rand(1, 2.5); // settles its feet, then looks for the sun
+    // Unless tapped, it stays a while and then flies off on its own (est.: no resting times found).
+    state.stay = rand(30, 90);
   }
 
   function startJourney(mode, points, speed) {
@@ -400,7 +402,11 @@ export function buildFlight({ bf, camera, pose, sun }) {
   }
 
   function update(dt) {
-    if (state.mode === 'rest') { idle(dt); walk(dt); }
+    if (state.mode === 'rest') {
+      idle(dt);
+      walk(dt);
+      if (!pose && (state.stay -= dt) <= 0) takeOff();
+    }
     else if (state.mode === 'away') {
       state.timer -= dt;
       if (state.timer <= 0) { bf.group.visible = true; comeBack(); }
