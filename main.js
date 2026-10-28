@@ -263,9 +263,9 @@ renderer.setAnimationLoop(() => {
   feet.radius.value = realRadius;
   space.update(dt);
   // Re-capture the environment (six renders of the surroundings and a blur, ~50-150 ms) only while the
-  // butterfly rests, when the sun turns, it has landed somewhere new or the wall around it has grown
+  // butterfly rests (and is not walking), when the sun turns, it has landed or walked somewhere new or the wall around it has grown
   // by a third; in flight it is small and quick, and the hitches showed while the lighting did not.
-  if (state.mode === 'rest' && (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.04 ||
+  if (state.mode === 'rest' && !state.walk && (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.04 ||
       bf.group.position.distanceTo(envAt.pos) > 0.01)) {
     envAt.sun.copy(sunDir);
     envAt.radius = realRadius;
@@ -285,7 +285,7 @@ renderer.setAnimationLoop(() => {
 // Every half second the GPU time of all the frames since (the timestamp queries pile up until
 // resolved) is shown per frame, with the frame rate. window.app lets the console switch parts off to
 // see what they cost.
-if (perf) window.app = { renderer, pipeline, scene, camera, scenePass, walls, space, overlay, bf, outputs: { sharp }, digital };
+if (perf) window.app = { renderer, pipeline, scene, camera, scenePass, walls, space, overlay, bf, outputs: { sharp }, digital, flight };
 function showPerf() {
   perfAt.frames++;
   const now = performance.now();

@@ -18,6 +18,7 @@ function basis(forward, dorsal) {
 function restPose(x, y, heading) {
   return {
     pos: new THREE.Vector3(x, y, REST_HEIGHT),
+    heading,
     quat: basis(new THREE.Vector3(Math.cos(heading), Math.sin(heading), 0), WALL_N),
   };
 }
@@ -52,6 +53,18 @@ const WANDER = 0.025;                // est.: meander off the planned path (m), 
 const KICK = 0.02;                   // est.: sideways jink at the start of each flapping bout (m)
 const MAX_BANK = deg(40);            // est.: roll limit in turns
 
+// Walking on the wall (est. throughout; no walking measurements were found for Morpho, so these are
+// set by eye from videos of resting butterflies): every 6-14 s it turns by up to 70° and walks
+// 0-3 cm, slowly, its four legs stepping in diagonal pairs (left mid with right hind, then right mid
+// with left hind), one pair on the wall while the other swings.
+const WALK_SPEED = 0.012;            // m/s
+const TURN_RATE = deg(50);           // per second
+const STEP_TIME = 0.12;              // s, one swing
+const STEP_LIFT = 0.0012;            // m, foot raised off the wall mid-swing
+const STEP_AT = 0.003;               // m, how far a foot may trail its rest spot before its pair steps
+const SETTLE_AT = 0.0006;            // m, the same once stopped: the last steps tidy the stance
+const PAIR = [0, 1, 1, 0];           // bf.legs order: left mid, left hind, right mid, right hind
+
 const tmpQ = new THREE.Quaternion();
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 
@@ -80,9 +93,22 @@ export function buildFlight({ bf, camera, pose }) {
     phase: 0, timer: 0, flapping: 1, flap: 1, bout: 3, glide: 0, alt: 0,
     restAngle: deg(10), restTarget: deg(10), restSwitch: rand(5, 10), lean: 0, leanTarget: deg(rand(-6, 6)),
     idleT: 0, aim: [[0, 0, 0, 0], [0, 0, 0, 0]],
+    walk: null, walkWait: rand(4, 10), walkT: 0, feet: null,
   };
   bf.group.position.copy(state.rest.pos);
   bf.group.quaternion.copy(state.rest.quat);
+  plant();
+
+  // Where foot i stands at rest under the body as it is now, in the world.
+  function restFoot(i) {
+    const f = bf.legs.rest[i];
+    return { ankle: bf.group.localToWorld(f.ankle.clone()), tip: bf.group.localToWorld(f.tip.clone()) };
+  }
+  // The feet hold on to the wall where they are: from now on they move only by stepping.
+  function plant() {
+    bf.group.updateMatrixWorld();
+    state.feet = bf.legs.rest.map((_, i) => ({ ...restFoot(i), s: 1 }));
+  }
 
   function startJourney(mode, points, speed) {
     state.mode = mode;
@@ -95,6 +121,8 @@ export function buildFlight({ bf, camera, pose }) {
   }
 
   function takeOff() {
+    Object.assign(state, { walk: null, feet: null });
+    bf.legs.pose();
     const p = state.rest.pos;
     // The legs push off first, so the body leaves the wall before the wings give much lift.
     startJourney('takeoff', [
@@ -210,7 +238,7 @@ export function buildFlight({ bf, camera, pose }) {
 
     if (s >= 1) {
       if (state.mode === 'takeoff') { state.mode = 'away'; state.timer = 1.4; bf.group.visible = false; }
-      else { state.mode = 'rest'; bf.abdomen.rotation.x = deg(-6); }
+      else { state.mode = 'rest'; bf.abdomen.rotation.x = deg(-6); plant(); }
     }
   }
 
@@ -257,6 +285,65 @@ export function buildFlight({ bf, camera, pose }) {
     });
   }
 
+  // Now and then, a few steps to a new spot or a turn on the spot. It walks the way it faces, so it
+  // turns toward where it is going as it sets off.
+  function walk(dt) {
+    const r = state.rest;
+    if (!state.walk && !pose && (state.walkWait -= dt) <= 0) {
+      state.walkWait = rand(6, 14);
+      let heading = r.heading + deg(rand(-70, 70)), dist = Math.random() < 0.4 ? 0 : rand(0.01, 0.03);
+      const ahead = (h, d) => r.pos.clone().add(new THREE.Vector3(Math.cos(h), Math.sin(h), 0).multiplyScalar(d));
+      // Heading out of the middle of the view, it turns back toward the middle instead.
+      const ndc = ahead(heading, dist + 0.02).project(camera);
+      if (Math.abs(ndc.x) > 0.6 || Math.abs(ndc.y) > 0.5) {
+        const mid = throughView(0, 0, 0).sub(r.pos), to = Math.atan2(mid.y, mid.x) - r.heading;
+        heading = r.heading + Math.atan2(Math.sin(to), Math.cos(to));
+        dist = Math.min(0.02, mid.length());
+      }
+      state.walk = { to: ahead(heading, dist), heading };
+    }
+    if (state.walk) {
+      const w = state.walk, turn = w.heading - r.heading;
+      r.heading += THREE.MathUtils.clamp(turn, -TURN_RATE * dt, TURN_RATE * dt);
+      // Easing in and out over the first and last few mm, and only once facing the way (no crabbing).
+      const off = w.to.clone().sub(r.pos), len = off.length();
+      const v = WALK_SPEED * Math.min(1, len / 0.004, 0.2 + state.walkT / 0.5) * Math.max(0, Math.cos(turn)) ** 8;
+      if (len > 1e-6) r.pos.addScaledVector(off, Math.min(1, v * dt / len));
+      state.walkT += dt;
+      if (len < 1e-4 && Math.abs(turn) < 1e-3) state.walk = null;
+      r.quat.copy(basis(new THREE.Vector3(Math.cos(r.heading), Math.sin(r.heading), 0), WALL_N));
+      bf.group.position.copy(r.pos);
+      bf.group.quaternion.copy(r.quat);
+    } else state.walkT = 0;
+
+    // Steps: when a pair's feet trail their rest spots under the moved body, that pair swings them
+    // over (a little past the spot while walking, so they land ahead), while the other pair holds.
+    bf.group.updateMatrixWorld();
+    const want = state.feet.map((_, i) => restFoot(i));
+    if (state.feet.every((f) => f.s >= 1)) {
+      const lag = state.feet.map((f, i) => Math.max(f.ankle.distanceTo(want[i].ankle), f.tip.distanceTo(want[i].tip)));
+      const need = [0, 1].map((p) => Math.max(...lag.filter((_, i) => PAIR[i] === p)));
+      const p = need[0] > need[1] ? 0 : 1;
+      if (need[p] > (state.walk ? STEP_AT : SETTLE_AT)) {
+        state.feet.forEach((f, i) => {
+          if (PAIR[i] === p && lag[i] > SETTLE_AT) Object.assign(f, { s: 0, from: { ankle: f.ankle.clone(), tip: f.tip.clone() }, past: state.walk ? 0.3 : 0 });
+        });
+      }
+    }
+    state.feet.forEach((f, i) => {
+      if (f.s >= 1) return;
+      f.s = Math.min(1, f.s + dt / STEP_TIME);
+      const k = 0.5 - 0.5 * Math.cos(Math.PI * f.s);
+      for (const key of ['ankle', 'tip']) {
+        const to = want[i][key].clone().addScaledVector(want[i][key].clone().sub(f.from[key]), f.past);
+        f[key].lerpVectors(f.from[key], to, k).addScaledVector(WALL_N, STEP_LIFT * Math.sin(Math.PI * f.s));
+      }
+    });
+    const inv = bf.group.matrixWorld.clone().invert();
+    bf.legs.pose(state.feet.map((f) => ({ ankle: f.ankle.clone().applyMatrix4(inv), tip: f.tip.clone().applyMatrix4(inv) })),
+      WALL_N.clone().applyQuaternion(tmpQ.copy(bf.group.quaternion).invert()));
+  }
+
   // Whether a tap at ndc touches the butterfly, which only answers while it rests.
   function touches(ndc) {
     if (state.mode !== 'rest') return false;
@@ -266,7 +353,7 @@ export function buildFlight({ bf, camera, pose }) {
   }
 
   function update(dt) {
-    if (state.mode === 'rest') idle(dt);
+    if (state.mode === 'rest') { idle(dt); walk(dt); }
     else if (state.mode === 'away') {
       state.timer -= dt;
       if (state.timer <= 0) { bf.group.visible = true; comeBack(); }

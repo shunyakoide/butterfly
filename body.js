@@ -63,6 +63,24 @@ function hairs(count, place, material) {
   return mesh;
 }
 
+// The same hair as a piece of geometry, for the legs, whose parts are skinned.
+function hairGeometry(h) {
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), h.dir.normalize());
+  return HAIR.clone().applyMatrix4(new THREE.Matrix4().compose(h.p, q, new THREE.Vector3(h.width, h.len, h.width)));
+}
+// Binds every vertex of geo wholly to one bone.
+function skin(geo, bone) {
+  const n = geo.attributes.position.count, index = new Uint16Array(n * 4), weight = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) { index[i * 4] = bone; weight[i * 4] = 1; }
+  return geo.setAttribute('skinIndex', new THREE.BufferAttribute(index, 4)).setAttribute('skinWeight', new THREE.BufferAttribute(weight, 4));
+}
+const Z = new THREE.Vector3(0, 0, 1);
+// A rotation whose x axis is along x and y axis as close to y as allows.
+function frame(x, y) {
+  const X = x.clone().normalize(), Y = y.clone().addScaledVector(X, -y.dot(X)).normalize();
+  return new THREE.Matrix4().makeBasis(X, Y, new THREE.Vector3().crossVectors(X, Y));
+}
+
 // Hexagonal ommatidia as a tiling normal map (each facet a slight dome).
 function ommatidiaNormals(size = 128) {
   const data = new Uint8Array(size * size * 4);
@@ -270,16 +288,18 @@ export function buildBody() {
   // Nymphalids walk on four legs.
   // Silvery grey, paler toward the feet (side photo photo-1651940397966).
   const legColor = (l) => () => hsl(30, 6, l);
-  const spineMat = new THREE.MeshPhysicalMaterial({ color: 0x1a120c, roughness: 0.5 });
+  // The spines lost their per-hair colour (hsl 20,30,8) when they left the instanced mesh: folded in here.
+  const spineMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0x1a120c).multiply(hsl(20, 30, 8)), roughness: 0.5 });
   const jointMat = new THREE.MeshPhysicalMaterial({ color: hsl(30, 6, 54), roughness: 0.7 });
   const V = (a) => new THREE.Vector3(...a);
-  // All the segments go into one mesh and all the joints into one instanced mesh, so the jointed
-  // legs cost two draws, not one per segment.
-  const legTubes = [], joints = [];
+  // The walking legs bend (pose, below), so each segment moves with a bone: the coxa, femur, tibia
+  // and tarsus of each leg. All the segments are one skinned mesh, the spines and claws another,
+  // and the joints one instanced mesh, so the jointed legs cost three draws, not one per segment.
+  const legTubes = [], legSpines = [], joints = [], legs = [], bones = [];
   // One straight segment of a leg, tapering from r0 to r1, rounded off at its far joint.
-  const segment = (a, b, r0, r1, l, next = r1) => {
-    legTubes.push(taperTube([a, b], (t) => r0 + (r1 - r0) * t, legColor(l), { seg: 4, radial: 8 }));
-    joints.push(new THREE.Matrix4().compose(V(b), new THREE.Quaternion(), new THREE.Vector3().setScalar(Math.min(r1, next))));
+  const segment = (a, b, r0, r1, l, bone, next = r1) => {
+    legTubes.push(skin(taperTube([a, b], (t) => r0 + (r1 - r0) * t, legColor(l), { seg: 4, radial: 8 }), bone));
+    joints.push({ bone, m: new THREE.Matrix4().compose(V(b), new THREE.Quaternion(), new THREE.Vector3().setScalar(Math.min(r1, next))) });
   };
   for (const s of [-1, 1]) {
     // reach scales the footprint so mid/hind legs are ~0.32/0.34 x forewing, as measured on a side photo
@@ -292,23 +312,31 @@ export function buildBody() {
       const coxa = at([0.0011, 0, -0.0022]), troch = at([0.0026, dy * 0.12, -0.0019]);
       const knee = at([0.0058, dy * 0.42, -0.0006]), ankle = at([0.0074, dy * 0.85, -LEG_DROP + 0.00012]);
       const tip = at([0.0084, dy * 1.3, -LEG_DROP + 0.00008]);
-      segment(coxa, troch, 0.00026, 0.00024, 48);
-      segment(troch, knee, 0.00024, 0.0002, 55, 0.00017);
-      segment(knee, ankle, 0.00017, 0.00014, 62, 0.00011);
+      const bone = bones.length;
+      for (let k = 0; k < 4; k++) bones.push(new THREE.Bone());
+      segment(coxa, troch, 0.00026, 0.00024, 48, bone);
+      segment(troch, knee, 0.00024, 0.0002, 55, bone + 1, 0.00017);
+      segment(knee, ankle, 0.00017, 0.00014, 62, bone + 2, 0.00011);
       const tars = [0, 0.5, 0.625, 0.75, 0.875, 1].map((f) => V(ankle).lerp(V(tip), f).toArray());
-      for (let k = 0; k < 5; k++) segment(tars[k], tars[k + 1], 0.00011 - k * 0.000006, 0.000105 - k * 0.000006, 66 + k * 2);
+      for (let k = 0; k < 5; k++) segment(tars[k], tars[k + 1], 0.00011 - k * 0.000006, 0.000105 - k * 0.000006, 66 + k * 2, bone + 3);
       // Spines on the tibia and tarsus, pointing down and back along the leg.
       const tibia = [V(knee), V(ankle)], tarsus = [V(ankle), V(tip)];
-      g.add(hairs(26, (i) => {
+      for (let i = 0; i < 26; i++) {
         const [a, b] = i < 14 ? tibia : tarsus, f = i < 14 ? (i + 0.5) / 14 : (i - 13.5) / 12;
         const tan = b.clone().sub(a).normalize();
-        return { p: a.clone().lerp(b, f), dir: tan.add(new THREE.Vector3(0, 0, -0.7)).add(new THREE.Vector3(s * (r() - 0.5), 0, 0)), len: 0.00028, width: 0.00003, color: hsl(20, 30, 8) };
-      }, spineMat));
+        legSpines.push(skin(hairGeometry({ p: a.clone().lerp(b, f), dir: tan.add(new THREE.Vector3(0, 0, -0.7)).add(new THREE.Vector3(s * (r() - 0.5), 0, 0)), len: 0.00028, width: 0.00003 }), i < 14 ? bone + 2 : bone + 3));
+      }
       // Claws, hooked down into the wall.
-      g.add(hairs(2, (i) => {
+      for (let i = 0; i < 2; i++) {
         const tan = V(tip).sub(V(ankle)).normalize();
-        return { p: V(tip), dir: tan.add(new THREE.Vector3((i - 0.5) * 0.8, 0, -0.6)), len: 0.00025, width: 0.00004, color: hsl(20, 30, 6) };
-      }, spineMat));
+        legSpines.push(skin(hairGeometry({ p: V(tip), dir: tan.add(new THREE.Vector3((i - 0.5) * 0.8, 0, -0.6)), len: 0.00025, width: 0.00004 }), bone + 3));
+      }
+      const l = { bone, troch: V(troch), knee: V(knee), ankle: V(ankle), tip: V(tip) };
+      l.l1 = l.knee.distanceTo(l.troch);
+      l.l2 = l.ankle.distanceTo(l.knee);
+      const n = new THREE.Vector3().crossVectors(l.knee.clone().sub(l.troch), l.ankle.clone().sub(l.troch));
+      l.rest = [frame(l.knee.clone().sub(l.troch), n), frame(l.ankle.clone().sub(l.knee), n), frame(l.tip.clone().sub(l.ankle), Z)];
+      legs.push(l);
     }
     // Forelegs: small, folded against the chest, covered in long pale hair (the "brush").
     const fpts = [[s * 0.0008, 0.0022, -0.0018], [s * 0.0016, 0.0034, -0.0026], [s * 0.0012, 0.0046, -0.0022]];
@@ -319,9 +347,45 @@ export function buildBody() {
       return { p, dir: new THREE.Vector3((r() - 0.5) + s * 0.5, 0.3, -0.8 + r() * 0.4), len: 0.0007 * (0.6 + r() * 0.6), width: 0.00003, color: hsl(40, 25, 60 + r() * 15) };
     }, hairMat));
   }
-  g.add(new THREE.Mesh(mergeGeometries(legTubes), tubeMat));
+  const legMesh = new THREE.SkinnedMesh(mergeGeometries(legTubes), tubeMat.clone());
+  const spineMesh = new THREE.SkinnedMesh(mergeGeometries(legSpines), spineMat);
+  for (const b of bones) { b.matrixAutoUpdate = false; legMesh.add(b); }
+  // Bones and meshes all sit in this frame, so a bone's matrix is how far its segment has moved.
+  const skeleton = new THREE.Skeleton(bones, bones.map(() => new THREE.Matrix4()));
+  for (const m of [legMesh, spineMesh]) { m.bind(skeleton, new THREE.Matrix4()); m.frustumCulled = false; g.add(m); }
   const knobs = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), jointMat, joints.length);
-  joints.forEach((m, i) => knobs.setMatrixAt(i, m));
   g.add(knobs);
+
+  // Bends the four walking legs ([left mid, left hind, right mid, right hind]) so each foot lands
+  // where asked: feet[i] = { ankle, tip } and up (the wall's normal) in this frame. Femur and tibia
+  // reach for the ankle, the knee kept in the plane through its rest position (two-bone IK); the
+  // tarsus lies from there toward the tip. Without feet, the legs return to their rest pose.
+  const m = new THREE.Matrix4();
+  const place = (bone, a0, f0, a, f) => {
+    const b = bones[bone].matrix.multiplyMatrices(f, m.copy(f0).transpose());
+    b.setPosition(a.clone().sub(a0.clone().applyMatrix4(b)));
+  };
+  function pose(feet, up) {
+    legs.forEach((l, i) => {
+      if (!feet) {
+        for (let k = 1; k < 4; k++) bones[l.bone + k].matrix.identity();
+        return;
+      }
+      const T = l.troch, to = feet[i].ankle.clone().sub(T);
+      const d = THREE.MathUtils.clamp(to.length(), Math.abs(l.l1 - l.l2) + 1e-6, (l.l1 + l.l2) * 0.999), u = to.normalize();
+      const v = l.knee.clone().sub(T);
+      v.addScaledVector(u, -v.dot(u)).normalize();
+      const a = (l.l1 * l.l1 - l.l2 * l.l2 + d * d) / (2 * d);
+      const K = T.clone().addScaledVector(u, a).addScaledVector(v, Math.sqrt(Math.max(0, l.l1 * l.l1 - a * a)));
+      const A = T.clone().addScaledVector(u, d), n = new THREE.Vector3().crossVectors(K.clone().sub(T), u);
+      place(l.bone + 1, T, l.rest[0], T, frame(K.clone().sub(T), n));
+      place(l.bone + 2, l.knee, l.rest[1], K, frame(A.clone().sub(K), n));
+      place(l.bone + 3, l.ankle, l.rest[2], A, frame(feet[i].tip.clone().sub(A), up));
+    });
+    joints.forEach((j, k) => knobs.setMatrixAt(k, m.multiplyMatrices(bones[j.bone].matrix, j.m)));
+    knobs.instanceMatrix.needsUpdate = true;
+  }
+  pose();
+  g.userData.legs = { rest: legs.map((l) => ({ ankle: l.ankle, tip: l.tip })), pose };
   return g;
 }
