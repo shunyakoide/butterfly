@@ -23,10 +23,7 @@
     #switches b { font-weight: normal; color: rgba(255,255,255,.95); min-width: 8ch; }
     /* No keys on a touch screen, and fingers need taller rows. */
     @media (pointer: coarse) { #switches kbd { display: none; } #switches { grid-template-columns: auto auto auto; }
-      #switches button > * { min-height: 40px; } }
-    /* Too narrow to share the bottom line with the hint: sit above it. */
-    @media (max-width: 700px) { #switches { bottom: 30px; } }
-  </style>
+      #switches button > * { min-height: 40px; } }  </style>
 </head>
 <body>
   <div id="hud">読み込み中…</div>

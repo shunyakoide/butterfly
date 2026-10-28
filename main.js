@@ -227,7 +227,7 @@ addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = overButterfly(e) ? 'pointer' : '';
 });
-hud.textContent = [`Morpho ${bf.species}`, '蝶に触れてみてください', 'ドラッグで太陽'].join(' ・ ');
+hud.textContent = ''; // started: the line is kept only for loading, errors and ?perf
 // The switches, read out in the corner like a camera's settings: a row (or its key) steps to the next
 // option, and the pips show where it is among them.
 const SWITCHES = [
