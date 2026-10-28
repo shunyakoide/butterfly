@@ -22,11 +22,11 @@ import { BOX } from './wing.js';
 
 // Spreads of the ridge band, in tan of the half-vector angle. Along the ridges: M. helenor's ~61°
 // FWHM of the reflected light (Sosa Espinosa 2026); across: >100° (Vukusic 1999).
-const SIGMA_ALONG = 0.32;
-const SIGMA_ACROSS = 0.55;
+export const SIGMA_ALONG = 0.32;
+export const SIGMA_ACROSS = 0.55;
 const SIGMA_LAMINA = 0.12;  // the lower lamina's near-specular spot (~±7°)
 const LAMINA = 0.5;         // its strength relative to the ridge band
-const N_EFF = 1.56;         // chitin index; a lower effective index shifted photos-blue too far to violet
+export const N_EFF = 1.56;         // chitin index; a lower effective index shifted photos-blue too far to violet
 // The ridge lamellae are tilted ~12° against the scale (M. helenor, Giraldo & Stavenga 2016), so
 // the band leans off the wing normal along the ridges.
 // shortcut: no paper we could read gives the direction (toward the tip or the base); the margin
@@ -84,7 +84,7 @@ function cmf(l) {
   ];
 }
 // Colour of a reflectance band ~90 nm wide (FWHM) centred on `centre`.
-function bandRGB(centre) {
+export function bandRGB(centre) {
   const xyz = [0, 0, 0];
   for (let l = 360; l <= 760; l += 5) {
     const w = Math.exp(-0.5 * ((l - centre) / 38) ** 2), c = cmf(l);

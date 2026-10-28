@@ -10,7 +10,7 @@ import { morphoPattern } from './pattern.js';
 import { buildRift, buildSpace, VOID, PLATFORM } from './rift.js';
 import { buildCircuit } from './circuit.js';
 import { buildGlass } from './glass.js';
-import { buildOverlay } from './fx.js';
+import { buildOverlay, MODES } from './fx.js';
 import { buildDigital, STYLES } from './digital.js';
 import { buildMotion } from './motion.js';
 import { buildFlight } from './flight.js';
@@ -173,10 +173,11 @@ const wearParam = params.get('wear'), wear = Number.isFinite(+wearParam) ? THREE
 const bf = new Butterfly({ ...morphoPattern(undefined, params.get('species')), ...(wearParam && wear !== null && { wear }) });
 scene.add(bf.group);
 
-// The analysis overlay (fx.js): E to toggle, ?fx=on to start with it. Its insets go in before the
-// vignette and grain, so they read as part of the same photographed frame.
-const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode() });
-overlay.toggle(params.get('fx') === 'on');
+// The analysis overlays (fx.js): E steps through them and off, ?fx=scan|measure|track|spectrum|target
+// (or on, for scan) to start with one. The scan insets go in before the vignette and grain, so they
+// read as part of the same photographed frame. (flight is built below; the overlay reads it per frame.)
+const overlay = buildOverlay({ camera, bf, frame: scenePass.getTextureNode(), state: () => flight.state, sun: sunDir });
+overlay.set(params.get('fx') === 'on' ? 'scan' : MODES.includes(params.get('fx')) ? params.get('fx') : null);
 
 // The butterfly as a screen print (digital.js): D steps through the styles and off, ?print=dots|
 // halftone|pixels|chrome|holo|topo|thermal to start with one. The butterfly's materials always write a mask beside the colour
@@ -233,7 +234,7 @@ hud.textContent = ''; // started: the line is kept only for loading, errors and 
 const SWITCHES = [
   { key: 'w', label: 'WALL', options: WALLS, get: () => wallKind,
     set: (v) => { wallKind = v; showWall(); envAt.radius = -1; } }, // re-capture: the light from the wall has changed
-  { key: 'e', label: 'FX', options: [false, true], get: () => overlay.enabled, set: (v) => overlay.toggle(v) },
+  { key: 'e', label: 'FX', options: [null, ...MODES], get: () => overlay.mode, set: (v) => overlay.set(v) },
   { key: 'd', label: 'PRINT', options: [null, ...STYLES], get: () => printStyle, set: (v) => { printStyle = v; setOutput(); } },
 ];
 const panel = document.getElementById('switches');
@@ -243,7 +244,7 @@ for (const s of SWITCHES) {
   s.show = () => {
     const at = s.options.indexOf(s.get());
     row.querySelector('i').innerHTML = s.options.map((_, k) => `<u${k === at ? ' class=on' : ''}></u>`).join('');
-    row.querySelector('b').textContent = typeof s.get() === 'boolean' || s.get() === null ? (s.get() ? 'on' : 'off') : s.get();
+    row.querySelector('b').textContent = s.get() ?? 'off';
   };
   s.step = () => { s.set(s.options[(s.options.indexOf(s.get()) + 1) % s.options.length]); s.show(); };
   row.addEventListener('click', s.step);
