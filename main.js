@@ -25,7 +25,9 @@ const params = new URLSearchParams(location.search);
 const perf = params.has('perf');
 const perfAt = { frames: 0, captures: 0, since: performance.now() };
 const renderer = new THREE.WebGPURenderer({ antialias: true, trackTimestamp: perf });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// 1.75, not the screen's 2: side by side in close, wide and backlit views it looked the same (only
+// hair tips soften, and only when zoomed to the pixel), and it renders at 45-48 fps instead of 38-39.
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 0.75;
@@ -179,7 +181,7 @@ scenePass.setMRT(mrt({ output, mask: float(0) }));
 scenePass.getTexture('mask').type = THREE.UnsignedByteType;
 const bfMask = mrt({ mask: float(1) });
 bf.group.traverse((o) => { if (o.isMesh) o.material.mrtNode = bfMask; });
-const digital = buildDigital({ colour, smooth: blurred.getTextureNode(), mask: scenePass.getTextureNode('mask') });
+const digital = buildDigital({ pixelRatio: () => renderer.getPixelRatio(), colour, smooth: blurred.getTextureNode(), mask: scenePass.getTextureNode('mask') });
 // Glowing scales shed from the wings (motion.js), always on.
 const motion = buildMotion({ scene, camera, bf });
 const chains = {};

@@ -14,7 +14,8 @@ const COLOUR = { dots: vec3(0.3, 1, 0.35), halftone: vec3(0.05, 0.35, 1), holo: 
 const SCATTER_TIME = 0.9; // s the take-off break-up lasts
 const brightness = (c) => max(c.r, max(c.g, c.b)); // the saturated blue reads dark in luminance
 
-export function buildDigital({ colour, smooth, mask }) {
+// pixelRatio: the renderer's, so the print cells keep their size in CSS pixels.
+export function buildDigital({ pixelRatio, colour, smooth, mask }) {
   const dpr = uniform(1), scatter = uniform(0);
 
   function print(base, style) {
@@ -95,7 +96,7 @@ export function buildDigital({ colour, smooth, mask }) {
 
   let prevMode = null, since = Infinity;
   function update(dt, mode) {
-    dpr.value = Math.min(devicePixelRatio, 2);
+    dpr.value = pixelRatio();
     if (mode === 'takeoff' && prevMode === 'rest') since = 0;
     prevMode = mode;
     since += dt;
