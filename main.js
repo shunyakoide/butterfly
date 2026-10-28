@@ -19,6 +19,11 @@ import { buildFlight } from './flight.js';
 const HDRI = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/garden_nook_2k.hdr';
 const deg = THREE.MathUtils.degToRad;
 const hud = document.getElementById('hud');
+// A failed start leaves a message instead of a dark page, then stops the module.
+function fail(message, error) {
+  hud.textContent = message;
+  throw error;
+}
 const params = new URLSearchParams(location.search);
 
 // ?perf shows the frame rate and the GPU time per frame (timestamp queries), for tuning.
@@ -34,7 +39,7 @@ renderer.toneMappingExposure = 0.75;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap; // WebGPU has no PCFSoft; shadow.radius softens
 document.body.appendChild(renderer.domElement);
-await renderer.init();
+await renderer.init().catch((e) => fail('このブラウザでは 3D を描けません(WebGPU / WebGL2 が必要です)', e));
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.01, 60); // far: the space behind the wall
@@ -110,7 +115,7 @@ function removeSun(tex, cap = 4) {
   const a = ((at % width) / width - 0.5) * 2 * Math.PI; // equirect u -> atan2(z, x)
   return Math.atan2(Math.cos(a), Math.sin(a));
 }
-const hdr = await new HDRLoader().loadAsync(HDRI);
+const hdr = await new HDRLoader().loadAsync(HDRI).catch((e) => fail('空の光の画像を読み込めませんでした。通信を確かめて、もう一度開いてください', e));
 hdr.mapping = THREE.EquirectangularReflectionMapping;
 const hdrSunAz = removeSun(hdr);
 const ENV = 0.45;
@@ -223,7 +228,9 @@ addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = overButterfly(e) ? 'pointer' : '';
 });
-hud.textContent = '蝶に触れてみてください ・ ドラッグで太陽 ・ W で壁を切り替え ・ E で分析表示 ・ D で描き方を切り替え';
+// Phones have no keys, so they get only the touch hints.
+hud.textContent = [`Morpho ${bf.species}`, '蝶に触れてみてください', 'ドラッグで太陽',
+  ...(matchMedia('(pointer: coarse)').matches ? [] : ['W で壁を切り替え', 'E で分析表示', 'D で描き方を切り替え'])].join(' ・ ');
 addEventListener('keydown', (e) => {
   if (e.key === 'e' || e.key === 'E') overlay.toggle();
   if (e.key === 'd' || e.key === 'D') { printStyle = [...STYLES, null][(STYLES.indexOf(printStyle) + 1) % (STYLES.length + 1)]; setOutput(); }
