@@ -23,7 +23,7 @@ export const SPECIES = {
 
 export function morphoPattern(seed = Math.floor(Math.random() * 1e9), species) {
   const r = rng(seed), names = Object.keys(SPECIES);
-  species = SPECIES[species] ? species : names[Math.floor(r() * names.length)];
+  species = Object.hasOwn(SPECIES, species) ? species : names[Math.floor(r() * names.length)];
   const S = SPECIES[species], range = ([a, b]) => a + r() * (b - a);
   return {
     seed,

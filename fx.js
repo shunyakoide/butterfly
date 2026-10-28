@@ -157,7 +157,7 @@ export function buildOverlay({ camera, bf, frame }) {
     ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = `11px ${MONO}`;
     const now = new Date(), pad = (n) => String(n).padStart(2, '0');
     ctx.fillText('SURVEILLANCE AESTHETICS', 20, 30);
-    ctx.fillText('morpho.peleides  —  tracking', 20, 46);
+    ctx.fillText(`morpho.${bf.species}  —  tracking`, 20, 46);
     ctx.textAlign = 'right';
     ctx.fillText('BIOMETRIC OVERLAY', w - 20, 30);
     ctx.fillText(`${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())}  ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`, w - 20, 46);

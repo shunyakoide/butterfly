@@ -21,7 +21,7 @@ WebGPU に対応したブラウザ(Chrome / Edge / Safari 26 以降など)で開
 - D: 蝶の描き方を切り替え(緑の点描 / 青の網点 / 白地に黒のドット / クローム / ホログラム / 等高線 / サーモ / オフ)
 - いつも出る演出: 飛び立つときに蝶がブロックに崩れて流れる、翅から舞い落ちながら瞬く、星形のきらめき(鱗粉)
 
-URL パラメータ: `?pose=open|closed`(止まっているときの翅)、`?sun=方位,仰角`(度)、`?species=peleides|menelaus|achilles|helenor|rhetenor|cypris|sulkowskyi`(種を決めて開く)、`?wear=0..1`(翅の擦り切れ)、`?slow=0.1`(スローモーション)、`?wall=circuit|glass`(回路・ガラスの壁で始める)、`?fx=on`(分析表示をオンで始める)、`?print=dots|halftone|pixels|chrome|holo|topo|thermal`(プリント表示で始める)、`?perf`(fps と 1 コマの GPU 時間を左下に出す。`window.app` から各部分を切り替えて重さを比べられる)。
+URL パラメータ: `?pose=open|closed`(止まっているときの翅)、`?sun=方位,仰角`(度)、`?species=peleides|menelaus|achilles|helenor|rhetenor|cypris|sulkowskyi`(種を決めて開く)、`?wear=0..1`(翅の擦り切れ)、`?slow=0.1`(スローモーション。0 より大きく 1 以下)、`?wall=circuit|glass`(回路・ガラスの壁で始める)、`?fx=on`(分析表示をオンで始める)、`?print=dots|halftone|pixels|chrome|holo|topo|thermal`(プリント表示で始める)、`?perf`(fps と 1 コマの GPU 時間を左下に出す。`window.app` から各部分を切り替えて重さを比べられる)。
 
 ## ファイル
 

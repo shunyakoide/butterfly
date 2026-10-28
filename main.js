@@ -80,10 +80,11 @@ function placeSun() {
   const c = Math.cos(sunAngles.el);
   sunDir.set(Math.sin(sunAngles.az) * c, Math.sin(sunAngles.el), Math.cos(sunAngles.az) * c);
 }
-// ?sun=az,el in degrees (az from the wall normal toward +x), for repeatable comparisons.
-const sunParam = params.get('sun');
-if (sunParam) {
-  [sunAngles.az, sunAngles.el] = sunParam.split(',').map((v) => deg(+v));
+// ?sun=az,el in degrees (az from the wall normal toward +x), for repeatable comparisons; held to the
+// front hemisphere like the drag, and ignored unless both numbers are given.
+const sunParam = (params.get('sun') ?? '').split(',').map(Number);
+if (sunParam.length === 2 && sunParam.every(Number.isFinite)) {
+  [sunAngles.az, sunAngles.el] = sunParam.map((v) => THREE.MathUtils.clamp(deg(v), deg(-85), deg(85)));
   placeSun();
 }
 
@@ -161,9 +162,9 @@ const vignette = smoothstep(0.35, 0.95, screenUV.sub(0.5).length().mul(1.4)).mul
 // ---------- butterfly ----------
 
 // ?wear=0..1 overrides the random wear, for checking old, worn individuals.
-const wearParam = params.get('wear');
+const wearParam = params.get('wear'), wear = Number.isFinite(+wearParam) ? THREE.MathUtils.clamp(+wearParam, 0, 1) : null;
 // ?species=peleides|menelaus|achilles|helenor|rhetenor|cypris|sulkowskyi picks one; otherwise each load draws one at random.
-const bf = new Butterfly({ ...morphoPattern(undefined, params.get('species')), ...(wearParam && { wear: +wearParam }) });
+const bf = new Butterfly({ ...morphoPattern(undefined, params.get('species')), ...(wearParam && wear !== null && { wear }) });
 scene.add(bf.group);
 
 // The analysis overlay (fx.js): E to toggle, ?fx=on to start with it. Its insets go in before the
@@ -199,19 +200,22 @@ const { state } = flight;
 const ndc = new THREE.Vector2();
 const overButterfly = (e) => flight.touches(ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1));
 // Drag moves the sun, and a tap (no drag) touches the butterfly. The view is fixed.
+// Moves are measured from the last position, not movementX, which touch pointers may leave at 0.
 let down = null;
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  down = { x: e.clientX, y: e.clientY };
+  down = { x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY };
 });
 addEventListener('pointerup', (e) => {
   if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5 && overButterfly(e)) flight.takeOff();
   down = null;
 });
+addEventListener('pointercancel', () => (down = null));
 addEventListener('pointermove', (e) => {
   if (!down) return;
   // Front hemisphere only: from grazing along one side of the wall to the other.
-  sunAngles.az = THREE.MathUtils.clamp(sunAngles.az + e.movementX * 0.01, deg(-85), deg(85));
-  sunAngles.el = THREE.MathUtils.clamp(sunAngles.el - e.movementY * 0.01, deg(-85), deg(85));
+  sunAngles.az = THREE.MathUtils.clamp(sunAngles.az + (e.clientX - down.lastX) * 0.01, deg(-85), deg(85));
+  sunAngles.el = THREE.MathUtils.clamp(sunAngles.el - (e.clientY - down.lastY) * 0.01, deg(-85), deg(85));
+  [down.lastX, down.lastY] = [e.clientX, e.clientY];
   placeSun();
 });
 renderer.domElement.addEventListener('pointermove', (e) => {
@@ -246,8 +250,8 @@ function handheld(t) {
   camera.rotateY(sway(0.7, 1.9, 4.3));
   camera.rotateZ(sway(0.5, 1.3, 3.7) * 0.5);
 }
-// ?slow=0.1 plays time slower, for watching the wingbeats.
-const timeScale = +(params.get('slow') ?? 1);
+// ?slow=0.1 plays time slower, for watching the wingbeats (0 < slow <= 1; anything else plays at 1).
+const slow = +params.get('slow'), timeScale = slow > 0 && slow <= 1 ? slow : 1;
 let realRadius = 0;
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 1 / 30) * timeScale;
@@ -263,9 +267,9 @@ renderer.setAnimationLoop(() => {
   feet.radius.value = realRadius;
   space.update(dt);
   // Re-capture the environment (six renders of the surroundings and a blur, ~50-150 ms) only while the
-  // butterfly rests (and is not walking), when the sun turns, it has landed or walked somewhere new or the wall around it has grown
+  // butterfly rests (not walking, the sun not being dragged), when the sun turns, it has landed or walked somewhere new or the wall around it has grown
   // by a third; in flight it is small and quick, and the hitches showed while the lighting did not.
-  if (state.mode === 'rest' && !state.walk && (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.04 ||
+  if (state.mode === 'rest' && !state.walk && !down && (!sunDir.equals(envAt.sun) || Math.abs(realRadius - envAt.radius) > 0.04 ||
       bf.group.position.distanceTo(envAt.pos) > 0.01)) {
     envAt.sun.copy(sunDir);
     envAt.radius = realRadius;

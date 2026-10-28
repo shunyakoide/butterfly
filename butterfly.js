@@ -21,6 +21,7 @@ function canvasTexture(colorSpace) {
 
 export class Butterfly {
   constructor(pattern) {
+    this.species = pattern.species;
     this.group = new THREE.Group();
     // [fore, hind] for each of: upperside colour, upperside roughness, underside colour.
     this.upper = [0, 1].map(() => canvasTexture(THREE.SRGBColorSpace));
