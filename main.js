@@ -191,7 +191,7 @@ function setOutput() {
 setOutput();
 
 // Where it rests and how it flies (flight.js); ?pose=open|closed holds the wings still.
-const flight = buildFlight({ bf, camera, pose: params.get('pose') });
+const flight = buildFlight({ bf, camera, pose: params.get('pose'), sun: sunDir });
 const { state } = flight;
 
 // ---------- input ----------

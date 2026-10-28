@@ -53,23 +53,29 @@ const WANDER = 0.025;                // est.: meander off the planned path (m), 
 const KICK = 0.02;                   // est.: sideways jink at the start of each flapping bout (m)
 const MAX_BANK = deg(40);            // est.: roll limit in turns
 
-// Walking on the wall (est. throughout; no walking measurements were found for Morpho, so these are
-// set by eye from videos of resting butterflies): every 6-14 s it turns by up to 70° and walks
-// 0-3 cm, slowly, its four legs stepping in diagonal pairs (left mid with right hind, then right mid
-// with left hind), one pair on the wall while the other swings.
-const WALK_SPEED = 0.012;            // m/s
-const TURN_RATE = deg(50);           // per second
-const STEP_TIME = 0.12;              // s, one swing
-const STEP_LIFT = 0.0012;            // m, foot raised off the wall mid-swing
-const STEP_AT = 0.003;               // m, how far a foot may trail its rest spot before its pair steps
-const SETTLE_AT = 0.0006;            // m, the same once stopped: the last steps tidy the stance
-const PAIR = [0, 1, 1, 0];           // bf.legs order: left mid, left hind, right mid, right hind
+// Walking on the wall. Basking butterflies with open wings most often settle with their back to the
+// sun (Clench 1966, via Arctic 23:268), and some turn on the spot after landing until they find it
+// (a lycaenid observation, secondary source): so after landing, and whenever the sun moves, it turns
+// to put its back to the sun, and now and then takes a few steps along that way. Nymphalids walk on
+// the mid and hind legs (Wolfe et al. 2011). Slow insects swing one leg at a time, each swing passing
+// from back to front (Ambe et al. 2018), and stick insects' mid and hind legs keep to a quadruped's
+// walk (Grabowska et al. 2012): left hind, left mid, right hind, right mid. Speeds and timings were
+// not found for butterflies (est.); like flies, it walks faster by stepping more often, not by
+// swinging slower (Drosophila: swing time ~constant).
+const WALK_SPEED = 0.012;            // m/s (est.)
+const TURN_RATE = deg(50);           // per second (est.)
+const BASK_TOLERANCE = deg(25);      // est.: how far off its back-to-the-sun heading it puts up with
+const STEP_TIME = 0.12;              // s, one swing (est.)
+const STEP_LIFT = 0.0012;            // m, foot raised off the wall mid-swing (est.)
+const SETTLE_AT = 0.0006;            // m, how far a foot may trail its rest spot before it steps
+const ORDER = [1, 0, 3, 2];          // bf.legs: [left mid, left hind, right mid, right hind]; stepped hind, mid, hind, mid
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 const tmpQ = new THREE.Quaternion();
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 
-// pose: ?pose=open|closed (see idle).
-export function buildFlight({ bf, camera, pose }) {
+// pose: ?pose=open|closed (see idle). sun: the direction toward the sun, kept up to date by main.js.
+export function buildFlight({ bf, camera, pose, sun }) {
   // Points chosen through the current view, so the flight crosses the frame wherever the camera is.
   function throughView(x, y, off) {
     ray.setFromCamera(new THREE.Vector2(x, y), camera);
@@ -93,7 +99,7 @@ export function buildFlight({ bf, camera, pose }) {
     phase: 0, timer: 0, flapping: 1, flap: 1, bout: 3, glide: 0, alt: 0,
     restAngle: deg(10), restTarget: deg(10), restSwitch: rand(5, 10), lean: 0, leanTarget: deg(rand(-6, 6)),
     idleT: 0, aim: [[0, 0, 0, 0], [0, 0, 0, 0]],
-    walk: null, walkWait: rand(4, 10), walkT: 0, feet: null,
+    walk: null, walkWait: 0, walkT: 0, gait: 0, feet: null,
   };
   bf.group.position.copy(state.rest.pos);
   bf.group.quaternion.copy(state.rest.quat);
@@ -108,6 +114,7 @@ export function buildFlight({ bf, camera, pose }) {
   function plant() {
     bf.group.updateMatrixWorld();
     state.feet = bf.legs.rest.map((_, i) => ({ ...restFoot(i), s: 1 }));
+    state.walkWait = rand(1, 2.5); // settles its feet, then looks for the sun
   }
 
   function startJourney(mode, points, speed) {
@@ -285,22 +292,24 @@ export function buildFlight({ bf, camera, pose }) {
     });
   }
 
-  // Now and then, a few steps to a new spot or a turn on the spot. It walks the way it faces, so it
-  // turns toward where it is going as it sets off.
+  // Turning to put its back to the sun, and now and then a few steps that way. It walks the way it
+  // faces, so it turns first. Heading out of the middle of the view, it only turns.
   function walk(dt) {
     const r = state.rest;
+    // Back to the sun: the head points away from the sun's direction along the wall; with the sun
+    // nearly straight in front of the wall, any heading will do.
+    const along = Math.hypot(sun.x, sun.y), bask = along > 0.15 ? Math.atan2(-sun.y, -sun.x) : r.heading;
+    const off = wrap(bask - r.heading);
+    if (!state.walk && Math.abs(off) > BASK_TOLERANCE * 1.4) state.walkWait = Math.min(state.walkWait, rand(0.5, 1.5));
     if (!state.walk && !pose && (state.walkWait -= dt) <= 0) {
       state.walkWait = rand(6, 14);
-      let heading = r.heading + deg(rand(-70, 70)), dist = Math.random() < 0.4 ? 0 : rand(0.01, 0.03);
-      const ahead = (h, d) => r.pos.clone().add(new THREE.Vector3(Math.cos(h), Math.sin(h), 0).multiplyScalar(d));
-      // Heading out of the middle of the view, it turns back toward the middle instead.
-      const ndc = ahead(heading, dist + 0.02).project(camera);
-      if (Math.abs(ndc.x) > 0.6 || Math.abs(ndc.y) > 0.5) {
-        const mid = throughView(0, 0, 0).sub(r.pos), to = Math.atan2(mid.y, mid.x) - r.heading;
-        heading = r.heading + Math.atan2(Math.sin(to), Math.cos(to));
-        dist = Math.min(0.02, mid.length());
-      }
-      state.walk = { to: ahead(heading, dist), heading };
+      // Never quite exact (est.): within a few degrees either side.
+      const heading = r.heading + (Math.abs(off) > BASK_TOLERANCE ? off + deg(rand(-10, 10)) : deg(rand(-10, 10)));
+      let dist = Math.random() < 0.5 ? 0 : rand(0.005, 0.02);
+      const ahead = (d) => r.pos.clone().add(new THREE.Vector3(Math.cos(heading), Math.sin(heading), 0).multiplyScalar(d));
+      const ndc = ahead(dist + 0.02).project(camera);
+      if (Math.abs(ndc.x) > 0.6 || Math.abs(ndc.y) > 0.5) dist = 0;
+      state.walk = { to: ahead(dist), heading };
     }
     if (state.walk) {
       const w = state.walk, turn = w.heading - r.heading;
@@ -316,18 +325,19 @@ export function buildFlight({ bf, camera, pose }) {
       bf.group.quaternion.copy(r.quat);
     } else state.walkT = 0;
 
-    // Steps: when a pair's feet trail their rest spots under the moved body, that pair swings them
-    // over (a little past the spot while walking, so they land ahead), while the other pair holds.
+    // Steps, one leg at a time in walking order: the next leg trailing its rest spot under the moved
+    // body swings over to it (half as far again while walking, so it lands ahead), the rest hold on.
+    // Walking, every leg trails, so the legs step on and on; stopped, the last steps tidy the stance.
     bf.group.updateMatrixWorld();
     const want = state.feet.map((_, i) => restFoot(i));
     if (state.feet.every((f) => f.s >= 1)) {
-      const lag = state.feet.map((f, i) => Math.max(f.ankle.distanceTo(want[i].ankle), f.tip.distanceTo(want[i].tip)));
-      const need = [0, 1].map((p) => Math.max(...lag.filter((_, i) => PAIR[i] === p)));
-      const p = need[0] > need[1] ? 0 : 1;
-      if (need[p] > (state.walk ? STEP_AT : SETTLE_AT)) {
-        state.feet.forEach((f, i) => {
-          if (PAIR[i] === p && lag[i] > SETTLE_AT) Object.assign(f, { s: 0, from: { ankle: f.ankle.clone(), tip: f.tip.clone() }, past: state.walk ? 0.3 : 0 });
-        });
+      for (let k = 0; k < 4; k++) {
+        const i = ORDER[state.gait], f = state.feet[i];
+        state.gait = (state.gait + 1) % 4;
+        if (Math.max(f.ankle.distanceTo(want[i].ankle), f.tip.distanceTo(want[i].tip)) > SETTLE_AT) {
+          Object.assign(f, { s: 0, from: { ankle: f.ankle.clone(), tip: f.tip.clone() }, past: state.walk ? 0.5 : 0 });
+          break;
+        }
       }
     }
     state.feet.forEach((f, i) => {
