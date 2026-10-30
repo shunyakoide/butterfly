@@ -6,6 +6,9 @@ three.js(`three/webgpu` と TSL)で青いモルフォ蝶を描く WebGPU デモ�
 - `npm run dev`: 開発サーバー
 - `npm run build`: ビルド(構文エラーの確認にも使う)
 
+## 公開
+https://butterfly.shunyakoide.com 。main に push すると `.github/workflows/ci.yml` がビルドして GitHub Pages に出す(DNS は Cloudflare で DNS only)。
+
 ## 構成
 README.md の「ファイル」の表を参照。
 
