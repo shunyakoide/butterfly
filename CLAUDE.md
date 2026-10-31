@@ -10,7 +10,7 @@ three.js(`three/webgpu` と TSL)で青いモルフォ蝶を描く WebGPU デモ�
 https://butterfly.shunyakoide.com 。main に push すると `.github/workflows/ci.yml` がビルドして GitHub Pages に出す(DNS は Cloudflare で DNS only)。
 
 ## 構成
-README.md の「ファイル」の表を参照。
+README.md の「Files」の表を参照。README は英語が本体で、日本語版は README.ja.md。変えるときは両方そろえる。
 
 ## 決まり
 - モデルファイルや画像テクスチャは入れない。形・模様・質感はすべてコードで作る(空の光の HDRI の読み込みと、README に載せる描画結果のスクリーンショット `docs/screenshot.jpg` だけは例外)

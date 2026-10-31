@@ -1,87 +1,89 @@
 # butterfly
 
-**[デモを開く](https://butterfly.shunyakoide.com)**
+English | [日本語](README.ja.md)
 
-![柱の壁にとまって翅を開いた Morpho peleides](docs/screenshot.jpg)
+**[Open the demo](https://butterfly.shunyakoide.com)**
 
-壁にとまる青いモルフォ蝶を、three.js の WebGPU で描くデモ。モデルファイルも画像テクスチャも使わず、形・模様・構造色・毛までコードで作っている。翅の青さや羽ばたきの数値は、できるだけ論文に基づき、根拠をコードのコメントに書いている。
+![A Morpho peleides with open wings, resting on a wall of columns](docs/screenshot.jpg)
 
-## 見どころ
+A blue morpho butterfly resting on a wall, drawn with three.js and WebGPU. There are no model files or image textures: the shape, patterns, structural color and even the hairs are all made in code. Values such as the wing's blue and the wingbeat come from papers where possible, and the code comments give the source of each.
 
-- **毎回ちがう蝶:** ページを開くたびに、モルフォ属の7種(peleides、menelaus、achilles、helenor、rhetenor、cypris、sulkowskyi)から1種を選び、表と裏の模様をその種らしく描く。翅と体の形は peleides のまま。
-- **角度で変わる青:** 青は色素ではなく、鱗粉の薄膜の干渉で出る構造色として計算している。見る角度と光の向きで色と明るさが変わる。
-- **生きているようなふるまい:** 4本の脚で歩いて太陽に背を向け、ときどき少し歩く。触ると飛び去り、少しして戻ってくる。触らなくても、30〜90 秒ほどで自分から飛び立つ。
-- **デジタルな壁:** 本物らしく作っているのは蝶だけで、壁は3種類から選べる。
-  - 柱: 光る線で描いた四角い柱の集まり。蝶の足元では天面がそろって足場になり、蝶が飛び去ると沈み、戻るとせり上がる。
-  - 回路: 琥珀色の回路が層になって奥へ続き、光のパルスが走る。
-  - ガラス: 銀白色のガラスの箱が重なった、結晶のような壁。
+## Highlights
 
-## 動かし方
+- **A different butterfly each time:** every page load picks one of seven Morpho species (peleides, menelaus, achilles, helenor, rhetenor, cypris, sulkowskyi) and draws its upper and under sides to match. The wing and body shapes stay those of peleides.
+- **A blue that changes with the angle:** the blue isn't a pigment. It's computed as structural color, from thin-film interference in the scales, so its hue and brightness change with the view and the light.
+- **Lifelike behavior:** it walks on four legs to turn its back to the sun, and now and then takes a few steps. Touch it and it flies off, then returns a little later. Left alone, it takes off by itself after 30 to 90 seconds.
+- **Digital walls:** only the butterfly is meant to look real. There are three walls to choose from:
+  - Columns: square columns drawn in glowing lines. Under the butterfly their tops level out into a platform, which sinks when it flies off and rises again when it returns.
+  - Circuit: layers of amber circuitry running into the distance, with pulses of light.
+  - Glass: stacked silver-white glass boxes, like a crystal.
+
+## Running it
 
 ```bash
 npm install
 npm run dev
 ```
 
-WebGPU に対応したブラウザ(Chrome / Edge / Safari 26 以降など)で開く。WebGPU がなければ WebGL2 で描く。空の光の画像を実行時に読み込むので、通信が必要。
+Open it in a browser with WebGPU support (Chrome, Edge, Safari 26 or later, and others). Without WebGPU it draws with WebGL2. The sky lighting is downloaded at runtime, so it needs a network connection.
 
-## 操作
+## Controls
 
-視点は固定。
+The camera is fixed.
 
-| 操作 | 動き |
+| Input | Action |
 |---|---|
-| 蝶をタップ | 飛び去る |
-| ドラッグ | 太陽の向きを変える(蝶も向き直る) |
-| 左下の WALL、またはキーの W | 壁: 柱 / 回路 / ガラス |
-| 左下の FX、またはキーの E | 画面の描き直し: オフ / scan / dither |
-| 左下の PRINT、またはキーの D | 蝶の描き方: オフ / 緑の点描 / 青の網点 / 白地に黒のドット / クローム / ホログラム / 等高線 / サーモ |
+| Tap the butterfly | It flies off |
+| Drag | Moves the sun (the butterfly turns to follow) |
+| WALL at the bottom left, or the W key | Wall: columns / circuit / glass |
+| FX at the bottom left, or the E key | Redraws the screen: off / scan / dither |
+| PRINT at the bottom left, or the D key | How the butterfly is drawn: off / green stipple / blue halftone / black dots on white / chrome / hologram / contour lines / thermal |
 
-FX の中身は次のとおり。
+The FX modes:
 
-- scan: 蝶を追う点と線・数値、サーモ / X 線風の拡大枠
-- dither: 画面全体を灰色の六角形の網点にし、モルフォの青の文字が格子の上で点いたり消えたりする
+- scan: points, lines and readouts tracking the butterfly, with thermal and X-ray style zoom windows
+- dither: turns the whole screen into a grey hexagonal dot screen, with Morpho-blue characters blinking on a grid
 
-いつも出る演出として、飛び立つときに蝶がブロックに崩れて流れ、翅から舞い落ちながら瞬く星形のきらめき(鱗粉)が出る。
+Always on: at take-off the butterfly breaks into flowing blocks, and star-shaped glints (scales) twinkle as they fall from its wings.
 
-## URL パラメータ
+## URL parameters
 
-| パラメータ | 値 | 意味 |
+| Parameter | Values | Meaning |
 |---|---|---|
-| `species` | `peleides` `menelaus` `achilles` `helenor` `rhetenor` `cypris` `sulkowskyi` | 種を決めて開く |
-| `pose` | `open` `closed` | 止まっているときの翅を固定する |
-| `wear` | `0`〜`1` | 翅の擦り切れ |
-| `sun` | `方位,仰角`(度) | 太陽の向き |
-| `slow` | `0` より大きく `1` 以下 | スローモーション(例: `0.1`) |
-| `wall` | `circuit` `glass` | その壁で始める |
-| `fx` | `scan` `dither`(`on` は scan) | FX をオンで始める |
-| `print` | `dots` `halftone` `pixels` `chrome` `holo` `topo` `thermal` | その描き方で始める |
-| `perf` | なし | fps と 1 コマの GPU 時間を左下に出す。`window.app` から各部分を切り替えて重さを比べられる |
+| `species` | `peleides` `menelaus` `achilles` `helenor` `rhetenor` `cypris` `sulkowskyi` | Opens with that species |
+| `pose` | `open` `closed` | Holds the wings still at rest |
+| `wear` | `0` to `1` | How worn the wings are |
+| `sun` | `azimuth,elevation` (degrees) | Sun direction |
+| `slow` | above `0`, up to `1` | Slow motion (for example `0.1`) |
+| `wall` | `circuit` `glass` | Starts with that wall |
+| `fx` | `scan` `dither` (`on` means scan) | Starts with FX on |
+| `print` | `dots` `halftone` `pixels` `chrome` `holo` `topo` `thermal` | Starts with that drawing style |
+| `perf` | none | Shows the frame rate and GPU time per frame at the bottom left. `window.app` lets you switch parts off to compare their cost |
 
-## ファイル
+## Files
 
-| ファイル | 中身 |
+| File | Contents |
 |---|---|
-| `main.js` | シーン、壁、光、環境光、ポストエフェクト、操作、ループ |
-| `flight.js` | 蝶のふるまい(止まる場所、壁の上の歩き、飛び立ちと戻り、翅の動き) |
-| `butterfly.js` | 蝶の組み立てと翅の動き |
-| `wing.js` | 翅の形、翅脈、凹凸 |
-| `pattern.js` | 種ごとの翅の模様のパラメータと描画 |
-| `morpho.js` | 青い構造色(鱗粉ごとの干渉反射)のマテリアル |
-| `body.js` | 胴体、毛、複眼、触角、脚(関節で曲がる) |
-| `rift.js` | 柱の壁と、その奥の空間 |
-| `circuit.js` | 回路の壁 |
-| `glass.js` | ガラスの壁 |
-| `fx.js` | FX(画面の描き直しとオーバーレイ) |
-| `digital.js` | 蝶の描き方の切り替え(D)と、飛び立ちの崩れ |
-| `motion.js` | 翅から舞うきらめき(鱗粉) |
-| `noise.js` | ノイズと乱数 |
-| `refs.html` | 見比べ用の参照写真(Unsplash へのリンク。画像は含まない) |
+| `main.js` | Scene, walls, lights, environment light, post-processing, controls, main loop |
+| `flight.js` | The butterfly's behavior (where it rests, walking on the wall, take-off and return, wing motion) |
+| `butterfly.js` | Assembling the butterfly and moving its wings |
+| `wing.js` | Wing shape, veins, relief |
+| `pattern.js` | Each species' wing pattern parameters and drawing |
+| `morpho.js` | Material for the blue structural color (interference reflection per scale) |
+| `body.js` | Body, hairs, compound eyes, antennae, jointed legs |
+| `rift.js` | The columns wall and the space behind it |
+| `circuit.js` | The circuit wall |
+| `glass.js` | The glass wall |
+| `fx.js` | FX (screen redraws and overlays) |
+| `digital.js` | Switching how the butterfly is drawn (D), and its break-up at take-off |
+| `motion.js` | Glints falling from the wings (scales) |
+| `noise.js` | Noise and random numbers |
+| `refs.html` | Reference photos for comparison (links to Unsplash, no images included) |
 
-## 素材
+## Assets
 
-蝶を照らす空の光は Poly Haven の HDRI [garden_nook](https://polyhaven.com/a/garden_nook)(CC0)を実行時に読み込んでいる。
+The sky lighting is the Poly Haven HDRI [garden_nook](https://polyhaven.com/a/garden_nook) (CC0), loaded at runtime.
 
-## ライセンス
+## License
 
 [MIT](LICENSE)
