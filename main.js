@@ -19,9 +19,15 @@ import { buildFlight } from './flight.js';
 const HDRI = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/garden_nook_2k.hdr';
 const deg = THREE.MathUtils.degToRad;
 const hud = document.getElementById('hud');
+const loading = document.getElementById('loading');
+// Names what is loading. The long steps block the page, so each waits until its line has been painted.
+function step(text) {
+  loading.textContent = text;
+  return new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+}
 // A failed start leaves a message instead of a dark page, then stops the module.
 function fail(message, error) {
-  hud.textContent = message;
+  loading.textContent = message;
   throw error;
 }
 const params = new URLSearchParams(location.search);
@@ -39,7 +45,8 @@ renderer.toneMappingExposure = 0.75;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap; // WebGPU has no PCFSoft; shadow.radius softens
 document.body.appendChild(renderer.domElement);
-await renderer.init().catch((e) => fail('このブラウザでは 3D を描けません(WebGPU / WebGL2 が必要です)', e));
+await step('Starting the renderer');
+await renderer.init().catch((e) => fail('This browser cannot draw 3D (WebGPU or WebGL2 is required)', e));
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.01, 60); // far: the space behind the wall
@@ -52,6 +59,7 @@ camera.lookAt(0, 0.005, 0);
 // cycle). The shadow and the space behind are shared; the specks take each wall's colour. All of them
 // answer where the feet are, through one pair of uniforms set in the loop.
 const feet = { centre: uniform(new THREE.Vector2()), radius: uniform(0) };
+await step('Building the walls');
 const walls = { columns: buildRift(camera, feet), circuit: buildCircuit(camera, feet), glass: buildGlass(camera, feet) };
 const space = buildSpace(feet);
 scene.add(space.group, ...Object.values(walls).map((w) => w.wall));
@@ -114,7 +122,10 @@ function removeSun(tex, cap = 4) {
   const a = ((at % width) / width - 0.5) * 2 * Math.PI; // equirect u -> atan2(z, x)
   return Math.atan2(Math.cos(a), Math.sin(a));
 }
-const hdr = await new HDRLoader().loadAsync(HDRI).catch((e) => fail('空の光の画像を読み込めませんでした。通信を確かめて、もう一度開いてください', e));
+await step('Downloading the sky light');
+const hdr = await new HDRLoader().loadAsync(HDRI, (e) => {
+  if (e.total) loading.textContent = `Downloading the sky light ${Math.round(e.loaded / e.total * 100)}%`;
+}).catch((e) => fail('Could not download the sky light. Check your connection and reload the page', e));
 hdr.mapping = THREE.EquirectangularReflectionMapping;
 const hdrSunAz = removeSun(hdr);
 const ENV = 0.45;
@@ -170,6 +181,7 @@ const vignette = smoothstep(0.35, 0.95, screenUV.sub(0.5).length().mul(1.4)).mul
 // ?wear=0..1 overrides the random wear, for checking old, worn individuals.
 const wearParam = params.get('wear'), wear = Number.isFinite(+wearParam) ? THREE.MathUtils.clamp(+wearParam, 0, 1) : null;
 // ?species=peleides|menelaus|achilles|helenor|rhetenor|cypris|sulkowskyi picks one; otherwise each load draws one at random.
+await step('Drawing the butterfly');
 const bf = new Butterfly({ ...morphoPattern(undefined, params.get('species')), ...(wearParam && wear !== null && { wear }) });
 scene.add(bf.group);
 
@@ -228,7 +240,6 @@ addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = overButterfly(e) ? 'pointer' : '';
 });
-hud.textContent = ''; // started: the line is kept only for loading, errors and ?perf
 // The switches, read out in the corner like a camera's settings: a row (or its key) steps to the next
 // option, and the pips show where it is among them.
 const SWITCHES = [
@@ -267,6 +278,7 @@ const clock = new THREE.Clock();
 // ?slow=0.1 plays time slower, for watching the wingbeats (0 < slow <= 1; anything else plays at 1).
 const slow = +params.get('slow'), timeScale = slow > 0 && slow <= 1 ? slow : 1;
 let realRadius = 0;
+await step('Compiling the shaders');
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 1 / 30) * timeScale;
   flight.update(dt);
@@ -293,6 +305,7 @@ renderer.setAnimationLoop(() => {
   // Keep the butterfly in focus wherever it is.
   focus.value = THREE.MathUtils.damp(focus.value, camera.position.distanceTo(bf.group.position), 6, dt);
   pipeline.render();
+  loading.hidden = true;
   overlay.update(clock.elapsedTime);
   digital.update(dt, state.mode);
   motion.update(dt, state.mode);
