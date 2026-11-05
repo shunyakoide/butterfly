@@ -12,7 +12,7 @@ A blue morpho butterfly resting on a wall, drawn with three.js and WebGPU. There
 
 - **A different butterfly each time:** every page load picks one of seven Morpho species (peleides, menelaus, achilles, helenor, rhetenor, cypris, sulkowskyi) and draws its upper and under sides to match. The wing and body shapes stay those of peleides.
 - **A blue that changes with the angle:** the blue isn't a pigment. It's computed as structural color, from thin-film interference in the scales, so its hue and brightness change with the view and the light.
-- **Lifelike behavior:** it walks on four legs to turn its back to the sun, and now and then takes a few steps. Touch it and it flies off, then returns a little later. Left alone, it takes off by itself after 30 to 90 seconds.
+- **Lifelike behavior:** it mostly rests with its wings closed, walking on four legs to turn its back or its side to the sun, and opens them when the cursor hovers over it. Touch it and it flies off, then returns a little later, sometimes crossing the view first or veering off a first approach. Left alone, it takes off by itself after 30 to 90 seconds.
 - **Digital walls:** only the butterfly is meant to look real. There are three walls to choose from:
   - Columns: square columns drawn in glowing lines. Under the butterfly their tops level out into a platform, which sinks when it flies off and rises again when it returns.
   - Circuit: layers of amber circuitry running into the distance, with pulses of light.
@@ -29,12 +29,14 @@ Open it in a browser with WebGPU support (Chrome, Edge, Safari 26 or later, and 
 
 ## Controls
 
-The camera is fixed.
+The camera does not move, apart from switching between two views.
 
 | Input | Action |
 |---|---|
+| Hover over the butterfly | It opens its wings (mouse only) |
 | Tap the butterfly | It flies off |
 | Drag | Moves the sun (the butterfly turns to follow) |
+| VIEW at the bottom left, or the V key | View: macro / wide (2.5 times as far back) |
 | WALL at the bottom left, or the W key | Wall: columns / circuit / glass |
 | FX at the bottom left, or the E key | Redraws the screen: off / scan / dither |
 | PRINT at the bottom left, or the D key | How the butterfly is drawn: off / green stipple / blue halftone / black dots on white / chrome / hologram / contour lines / thermal |
@@ -55,6 +57,7 @@ Always on: at take-off the butterfly breaks into flowing blocks, and star-shaped
 | `wear` | `0` to `1` | How worn the wings are |
 | `sun` | `azimuth,elevation` (degrees) | Sun direction |
 | `slow` | above `0`, up to `1` | Slow motion (for example `0.1`) |
+| `view` | `wide` | Starts with the wide view |
 | `wall` | `circuit` `glass` | Starts with that wall |
 | `fx` | `scan` `dither` (`on` means scan) | Starts with FX on |
 | `print` | `dots` `halftone` `pixels` `chrome` `holo` `topo` `thermal` | Starts with that drawing style |
@@ -65,7 +68,7 @@ Always on: at take-off the butterfly breaks into flowing blocks, and star-shaped
 | File | Contents |
 |---|---|
 | `main.js` | Scene, walls, lights, environment light, post-processing, controls, main loop |
-| `flight.js` | The butterfly's behavior (where it rests, walking on the wall, take-off and return, wing motion) |
+| `flight.js` | The butterfly's behavior (where it rests, walking on the wall, take-off and return, short hops, passes and aborted landings, wing motion) |
 | `butterfly.js` | Assembling the butterfly and moving its wings |
 | `wing.js` | Wing shape, veins, relief |
 | `pattern.js` | Each species' wing pattern parameters and drawing |

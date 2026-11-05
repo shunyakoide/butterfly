@@ -52,6 +52,15 @@ const START_SPEED = 0.2;             // est.: speed off the leg push, and at tou
 const WANDER = 0.025;                // est.: meander off the planned path (m), sideways and up/down
 const KICK = 0.02;                   // est.: sideways jink at the start of each flapping bout (m)
 const MAX_BANK = deg(40);            // est.: roll limit in turns
+// What it does between leaving the wall and settling again, so that not every flight is the same
+// out-and-back. Males of understory Morpho patrol back and forth along streams and trails (Le Roy
+// 2021 filmed them patrolling; the back-and-forth is from field guides, a secondary source), so it
+// sometimes crosses the view and leaves again before it comes in. Butterflies also often settle a
+// short hop away rather than leave, and veer off from a first approach before landing on a second;
+// no rates were found for any of these (est.).
+const HOP = 0.35;                    // est.: chance a flight it starts on its own is a short hop within view
+const PASS = 0.3;                    // est.: chance, each time it comes back, that it only crosses the view
+const ABORT = 0.3;                   // est.: chance a landing first veers off a few cm from the wall
 
 // Walking on the wall. Basking butterflies with open wings most often settle with their back to the
 // sun (Clench 1966, via Arctic 23:268), and some turn on the spot after landing until they find it
@@ -65,6 +74,20 @@ const MAX_BANK = deg(40);            // est.: roll limit in turns
 const WALK_SPEED = 0.012;            // m/s (est.)
 const TURN_RATE = deg(50);           // per second (est.)
 const BASK_TOLERANCE = deg(25);      // est.: how far off its back-to-the-sun heading it puts up with
+// How it rests, chosen at each landing. Morphos mostly rest with the wings closed, showing the brown
+// underside, and open them now and then to warm up (Britannica; field guides). Butterflies warming
+// with the wings open turn their back to the sun (dorsal basking), those warming with them closed
+// turn their side to it (lateral basking: Clench 1966, via Arctic 23:268 and Rawlins 1978), and in
+// the shade of the understory they need not turn at all. The shares and times are est.
+// A cursor resting over it bothers it, and it opens its wings, holding them open while the cursor
+// stays and a little after. Morphos open them when disturbed (M. rhetenor flicks them open and shut
+// at ants and wasps: field guides); held open here so that the blue can be looked at.
+const DISTURBED_HOLD = [2, 4];       // s the wings stay open after the cursor leaves (est.)
+const BASKING = [
+  { p: 0.3, face: 'back', open: [5, 10], closed: [1, 2.5] },  // basking open, closing now and then
+  { p: 0.35, face: 'side', open: [1, 3], closed: [6, 14] },   // basking closed, opening briefly
+  { p: 0.35, face: null, open: [1, 3], closed: [6, 14] },     // resting in the shade
+];
 const STEP_TIME = 0.12;              // s, one swing (est.)
 const STEP_LIFT = 0.0012;            // m, foot raised off the wall mid-swing (est.)
 const SETTLE_AT = 0.0006;            // m, how far a foot may trail its rest spot before it steps
@@ -94,9 +117,9 @@ export function buildFlight({ bf, camera, pose, sun }) {
     const hit = onWall();
     return hit ? hit.addScaledVector(WALL_N, off) : ray.ray.at(0.4, new THREE.Vector3());
   }
-  // Just outside the frame, to one side or the top.
-  function offscreenPoint() {
-    const side = [[-1.6, rand(-0.5, 0.8)], [1.6, rand(-0.5, 0.8)], [rand(-0.8, 0.8), 1.6]][Math.floor(Math.random() * 3)];
+  // Just outside the frame: left, right or top (0, 1, 2), any of them if not given.
+  function offscreenPoint(which = Math.floor(Math.random() * 3)) {
+    const side = [[-1.6, rand(-0.5, 0.8)], [1.6, rand(-0.5, 0.8)], [rand(-0.8, 0.8), 1.6]][which];
     return throughView(side[0], side[1], rand(0.06, 0.15));
   }
   // A few cm off the wall, inside the frame.
@@ -127,12 +150,33 @@ export function buildFlight({ bf, camera, pose, sun }) {
     bf.group.updateMatrixWorld();
     state.feet = bf.legs.rest.map((_, i) => ({ ...restFoot(i), s: 1 }));
     state.walkWait = rand(1, 2.5); // settles its feet, then looks for the sun
+    let pick = Math.random();
+    state.basking = BASKING.find((b) => (pick -= b.p) < 0) ?? BASKING[0];
     // Unless tapped, it stays a while and then flies off on its own (est.: no resting times found).
     state.stay = rand(30, 90);
   }
 
-  function startJourney(mode, points, speed) {
+  // Where it will land: somewhere inside the middle of the current view, whatever the aspect ratio.
+  function landingSpot() {
+    ray.setFromCamera(new THREE.Vector2(rand(-0.5, 0.5), rand(-0.45, 0.45)), camera);
+    // Off the wall's edge (onWall gives null), land in the middle instead: comeBack runs every frame
+    // until it succeeds, so a throw here froze the butterfly.
+    return onWall() ?? new THREE.Vector3();
+  }
+  // It touches down facing the way it came in along the wall (from the last point before the final
+  // approach), give or take (est.). A fixed range of headings, with the sun fixed, made the turn to
+  // bask after landing go the same way every time.
+  function settleOn(spot, from) {
+    state.rest = restPose(spot.x, spot.y, Math.atan2(spot.y - from.y, spot.x - from.x) + deg(rand(-25, 25)));
+  }
+  // The last two points of every landing: in front of the spot and a little above it, then the spot.
+  const approach = (p) => [p.clone().addScaledVector(WALL_N, 0.045).add(new THREE.Vector3(rand(-0.02, 0.02), 0.015, 0)), p.clone()];
+
+  // mode: 'takeoff' leaves the wall, 'landing' ends on it, 'flying' does neither; a hop does both
+  // (mode 'takeoff', ends: [true, true]).
+  function startJourney(mode, points, speed, ends = [mode === 'takeoff', mode === 'landing']) {
     state.mode = mode;
+    state.ends = ends;
     state.curve = new THREE.CatmullRomCurve3(points, false, 'centripetal');
     state.length = state.curve.getLength();
     state.speed = speed;
@@ -141,35 +185,42 @@ export function buildFlight({ bf, camera, pose, sun }) {
       wobble: [0, 1, 2, 3].map(() => Math.random() * Math.PI * 2) });
   }
 
-  // The feet stay on the wall for the push (airLegs).
-  function takeOff() {
+  // The feet stay on the wall for the push (airLegs). Tapped, it always escapes out of view; leaving
+  // on its own, it may only hop to another spot in view.
+  function takeOff(escape = true) {
     state.walk = null;
     const p = state.rest.pos;
     // The legs push off first, so the body leaves the wall before the wings give much lift.
-    startJourney('takeoff', [
-      p.clone(),
-      p.clone().addScaledVector(WALL_N, 0.03).add(new THREE.Vector3(0, 0.012, 0)),
-      wanderPoint(),
-      offscreenPoint(),
-    ], SPEED);
+    const push = p.clone().addScaledVector(WALL_N, 0.03).add(new THREE.Vector3(0, 0.012, 0));
+    if (!escape && Math.random() < HOP) {
+      const spot = landingSpot();
+      // A hop of a few cm is no flight at all: then it goes up and around first.
+      const via = [wanderPoint(), ...(spot.distanceTo(p) < 0.1 ? [wanderPoint()] : [])];
+      settleOn(spot, via.at(-1));
+      startJourney('takeoff', [p.clone(), push, ...via, ...approach(state.rest.pos)], SPEED * 0.8, [true, true]);
+    } else startJourney('takeoff', [p.clone(), push, wanderPoint(), offscreenPoint()], SPEED);
     // The first downstroke starts with the wings at the top (from closed, a fling).
     Object.assign(state, { phase: 0, flapping: 1, bout: 3, alt: 0 });
   }
 
   function comeBack() {
-    // Land somewhere inside the middle of the current view, whatever the aspect ratio.
-    ray.setFromCamera(new THREE.Vector2(rand(-0.5, 0.5), rand(-0.45, 0.45)), camera);
-    // Off the wall's edge (onWall gives null), land in the middle instead: comeBack runs every frame
-    // until it succeeds, so a throw here froze the butterfly.
-    const spot = onWall() ?? new THREE.Vector3();
-    state.rest = restPose(spot.x, spot.y, deg(rand(40, 140)));
-    const p = state.rest.pos;
-    startJourney('landing', [
-      offscreenPoint(),
-      wanderPoint(),
-      p.clone().addScaledVector(WALL_N, 0.045).add(new THREE.Vector3(rand(-0.02, 0.02), 0.015, 0)),
-      p.clone(),
-    ], SPEED * 0.8);
+    if (Math.random() < PASS) {
+      // Across the view and out the other side: a patrol pass. It comes back once more after.
+      const from = Math.random() < 0.5 ? 0 : 1;
+      startJourney('flying', [offscreenPoint(from), wanderPoint(), wanderPoint(), offscreenPoint(1 - from)], SPEED);
+      Object.assign(state, { flapping: 1, bout: 3, alt: 0 });
+      return;
+    }
+    const spot = landingSpot(), p = spot.clone().setZ(REST_HEIGHT);
+    // A first approach that veers off 1.5-3 cm short of the wall and swings back out, then a second
+    // that lands.
+    const abort = Math.random() < ABORT ? [
+      p.clone().addScaledVector(WALL_N, rand(0.015, 0.03)).add(new THREE.Vector3(rand(-0.04, 0.04), rand(-0.02, 0.03), 0)),
+      throughView(rand(-0.6, 0.6), rand(-0.4, 0.6), rand(0.06, 0.12)),
+    ] : [];
+    const via = [wanderPoint(), ...abort];
+    settleOn(spot, via.at(-1));
+    startJourney('landing', [offscreenPoint(), ...via, ...approach(state.rest.pos)], SPEED * 0.8);
     // After touchdown the wings fold up closed.
     Object.assign(state, { flapping: 1, bout: 4, alt: 0, restAngle: CLOSED, restTarget: CLOSED, restSwitch: rand(0.8, 1.5) });
   }
@@ -178,7 +229,8 @@ export function buildFlight({ bf, camera, pose, sun }) {
     // Slow near the wall, full speed in the open: speeding up over the first ~12 cm after the leg
     // push, slowing over the last ~12 cm before touchdown. (At this macro framing, 1.3 m/s crosses
     // the frame in a tenth of a second.)
-    const fromWall = state.mode === 'takeoff' ? state.dist : state.length - state.dist;
+    const [start, end] = state.ends;
+    const fromWall = Math.min(start ? state.dist : Infinity, end ? state.length - state.dist : Infinity);
     const v = THREE.MathUtils.lerp(START_SPEED, state.speed, THREE.MathUtils.smoothstep(fromWall, 0, 0.12));
     state.dist = Math.min(state.length, state.dist + v * dt);
     const s = state.dist / state.length;
@@ -186,11 +238,13 @@ export function buildFlight({ bf, camera, pose, sun }) {
     const tangent = state.curve.getTangentAt(Math.min(s, 0.999));
 
     // How "airborne" we are: 0 standing on the wall, 1 in free flight.
-    const air = state.mode === 'takeoff'
-      ? THREE.MathUtils.smoothstep(s, 0, 0.06)
-      : 1 - THREE.MathUtils.smoothstep(s, 0.85, 1);
+    const smooth = THREE.MathUtils.smoothstep;
+    // A hop folds its wings closed on touchdown like any landing: set once it is well airborne, where
+    // the rest angle no longer shows (at take-off the wings start from the angle they rested at).
+    if (start && end && s > 0.5) Object.assign(state, { restAngle: CLOSED, restTarget: CLOSED, restSwitch: rand(0.8, 1.5) });
+    const air = (start ? smooth(s, 0, 0.06) : 1) * (end ? 1 - smooth(s, 0.85, 1) : 1);
     // Gliding only in free flight, away from the wall.
-    const free = state.mode === 'takeoff' ? THREE.MathUtils.smoothstep(s, 0.2, 0.35) : 1 - THREE.MathUtils.smoothstep(s, 0.6, 0.75);
+    const free = (start ? smooth(s, 0.2, 0.35) : 1) * (end ? 1 - smooth(s, 0.6, 0.75) : 1);
 
     // Flap–glide: bouts of a few wingbeats, then a short glide (≥0.17 s) with the wings held out.
     const prev = state.phase;
@@ -241,7 +295,7 @@ export function buildFlight({ bf, camera, pose, sun }) {
     bf.group.position.copy(pos);
 
     // Body pitched up in flight, rocking with each beat; more nose-up while braking to land.
-    const brake = state.mode === 'landing' ? THREE.MathUtils.smoothstep(s, 0.7, 0.95) : 0;
+    const brake = end ? THREE.MathUtils.smoothstep(s, 0.7, 0.95) : 0;
     // Each beat rocks it by ~±25°, a quarter-beat behind the wings: lowest mid-downstroke (Pieris: Suzuki et al. 2022).
     const pitch = THREE.MathUtils.lerp(deg(15), PITCH, state.flap) + deg(20) * brake - deg(25) * Math.sin(state.phase) * state.flap;
     const heading = state.vel.lengthSq() > 0.01 ? state.vel.clone().normalize() : tangent;
@@ -260,19 +314,22 @@ export function buildFlight({ bf, camera, pose, sun }) {
     airLegs();
 
     if (s >= 1) {
-      if (state.mode === 'takeoff') { state.mode = 'away'; state.timer = 1.4; bf.group.visible = false; }
+      if (!end) { state.mode = 'away'; state.timer = rand(0.8, 2.5); bf.group.visible = false; }
       else { state.mode = 'rest'; bf.abdomen.rotation.x = deg(-6); plant(); }
     }
   }
 
   function idle(dt) {
-    // Mostly basking with the blue open (wild morphos rest closed more often, but the blue is the
-    // point of the piece), closing now and then to show the brown underside.
+    // Open and closed in turn, for as long as this landing's way of resting holds each (BASKING).
+    if (state.hovered) {
+      if (state.restTarget > deg(45)) state.restTarget = deg(rand(4, 25));
+      state.restSwitch = Math.max(state.restSwitch, rand(...DISTURBED_HOLD));
+    }
     state.restSwitch -= dt;
     if (state.restSwitch <= 0) {
       const open = state.restTarget > deg(45);
       state.restTarget = open ? deg(rand(4, 25)) : CLOSED;
-      state.restSwitch = open ? rand(5, 10) : rand(1, 2.5);
+      state.restSwitch = rand(...(open ? state.basking.open : state.basking.closed));
       // Basking wings are never quite symmetric, and a few degrees of tilt swings the structural
       // blue's brightness a lot (reflection moves by twice the tilt): est., from photos where the
       // two sides differ clearly.
@@ -308,13 +365,15 @@ export function buildFlight({ bf, camera, pose, sun }) {
     });
   }
 
-  // Turning to put its back to the sun, and now and then a few steps that way. It walks the way it
-  // faces, so it turns first. Heading out of the middle of the view, it only turns.
+  // Turning to put its back or its side to the sun (BASKING), and now and then a few steps that way.
+  // It walks the way it faces, so it turns first. Heading out of the middle of the view, it only turns.
   function walk(dt) {
     const r = state.rest;
-    // Back to the sun: the head points away from the sun's direction along the wall; with the sun
-    // nearly straight in front of the wall, any heading will do.
-    const along = Math.hypot(sun.x, sun.y), bask = along > 0.15 ? Math.atan2(-sun.y, -sun.x) : r.heading;
+    // Back to the sun: the head points away from the sun's direction along the wall; side to it: a
+    // quarter turn from that, whichever is nearer. With the sun nearly straight in front of the wall,
+    // or in the shade, any heading will do.
+    const along = Math.hypot(sun.x, sun.y), away = Math.atan2(-sun.y, -sun.x), face = along > 0.15 ? state.basking.face : null;
+    const bask = face === 'back' ? away : face === 'side' ? away + Math.sign(wrap(r.heading - away) || 1) * Math.PI / 2 : r.heading;
     const off = wrap(bask - r.heading);
     if (!state.walk && Math.abs(off) > BASK_TOLERANCE * 1.4) state.walkWait = Math.min(state.walkWait, rand(0.5, 1.5));
     if (!state.walk && !pose && (state.walkWait -= dt) <= 0) {
@@ -379,7 +438,8 @@ export function buildFlight({ bf, camera, pose, sun }) {
     const blend = (a, b, k) => a.map((f, i) => ({ ankle: f.ankle.clone().lerp(b[i].ankle, k), tip: f.tip.clone().lerp(b[i].tip, k),
       knee: (f.knee ?? L.rest[i].knee).clone().lerp(b[i].knee, k) }));
     bf.group.updateMatrixWorld();
-    if (state.mode === 'takeoff') {
+    const [start, end] = state.ends;
+    if (start && state.dist < state.length / 2) {
       if (state.feet && state.dist < PUSH) {
         L.pose(feetInBody(), WALL_N.clone().applyQuaternion(tmpQ.copy(bf.group.quaternion).invert()));
         return;
@@ -387,7 +447,8 @@ export function buildFlight({ bf, camera, pose, sun }) {
       if (state.feet) [state.letGo, state.feet] = [feetInBody(), null];
       L.pose(blend(state.letGo, L.tuck, smooth(state.dist, PUSH, PUSH + FOLD)), BODY_UP);
     } else {
-      const left = state.length - state.dist;
+      // Never reaching out on a flight that doesn't land (smoothstep of Infinity is 1: legs tucked).
+      const left = end ? state.length - state.dist : Infinity;
       const out = blend(L.tuck, L.reach, 1 - smooth(left, REACH[1], REACH[0]));
       L.pose(blend(out, L.rest, 1 - smooth(left, 0, SETTLE)), BODY_UP);
     }
@@ -401,11 +462,13 @@ export function buildFlight({ bf, camera, pose, sun }) {
     return hit && hit.distanceTo(state.rest.pos) < 0.035;
   }
 
-  function update(dt) {
+  // pointer: where the cursor is (NDC), or null when it is off the page.
+  function update(dt, pointer = null) {
+    state.hovered = !!pointer && touches(pointer);
     if (state.mode === 'rest') {
       idle(dt);
       walk(dt);
-      if (!pose && (state.stay -= dt) <= 0) takeOff();
+      if (!pose && (state.stay -= dt) <= 0) takeOff(false);
     }
     else if (state.mode === 'away') {
       state.timer -= dt;

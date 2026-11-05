@@ -45,7 +45,7 @@ export function buildMotion({ scene, camera, bf }) {
     bf.group.updateMatrixWorld();
 
     if (bf.group.visible) {
-      owed += dt * (mode === 'takeoff' || mode === 'landing' ? DUST_RATE.flying : DUST_RATE.rest);
+      owed += dt * (mode !== 'rest' ? DUST_RATE.flying : DUST_RATE.rest);
       for (; owed >= 1; owed--) shed();
     }
     for (let i = 0; i < DUST; i++) {

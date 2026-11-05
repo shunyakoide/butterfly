@@ -6,7 +6,7 @@ import { PLATFORM } from './rift.js';
 // dark, with pads at their ends and beams running straight back from some of them. Pulses of light
 // run along everything. The front layers show only around the resting butterfly, glowing under it;
 // elsewhere only the pulses in the depths are seen. All of it is one set of
-// line segments, drawn additively so crossings glow, and built only where the fixed camera sees it.
+// line segments, drawn additively so crossings glow, and built only where the camera sees it (rebuilt when the view changes).
 
 const LAYERS = [0, -0.01, -0.03, -0.07, -0.15, -0.3, -0.6, -1.2]; // m, depth each layer of traces starts at
 const TRACES = 40; // per layer: sparse, so most of the wall is dark

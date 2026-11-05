@@ -10,13 +10,13 @@ import { attribute, positionGeometry, time, smoothstep, mix, vec3, exp, fract, f
 // butterfly through its environment capture.
 
 export const VOID = 0x010103; // the colour of the space behind
-const SPAN = 1.0;   // m, extent of the wall searched for visible columns
+const SPAN = 1.6;   // m, extent of the wall searched for visible columns (enough for the wide view on a 16:9 screen; under 1024 columns a side, for the hash key)
 const CELL = 0.005; // m, column pitch; each column is drawn 84% of it wide, so they read apart
 const DEEPEST = 0.3;  // m, how far back a column's foot can reach (sink + post length, below)
 // m, full radius of the platform under the resting butterfly; main.js grows it after touchdown, and the circuit and glass walls scale their glow by it (est.)
 export const PLATFORM = 0.12;
 
-// The camera never moves, so only columns that show in it are built: a column is kept when the box
+// The camera moves only between views (fit runs again), so only columns that show in it are built: a column is kept when the box
 // spanned by its top and its deepest foot, on screen, overlaps the frame (with a small margin).
 function visibleCells(camera) {
   camera.updateMatrixWorld();

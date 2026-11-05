@@ -50,8 +50,10 @@ await renderer.init().catch((e) => fail('This browser cannot draw 3D (WebGPU or 
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.01, 60); // far: the space behind the wall
-camera.position.set(0.1, -0.12, 0.25);
-camera.lookAt(0, 0.005, 0);
+// The macro framing; the wide one looks from the same direction, farther back (setView).
+const LOOK_AT = new THREE.Vector3(0, 0.005, 0), MACRO_AT = new THREE.Vector3(0.1, -0.12, 0.25);
+camera.position.copy(MACRO_AT);
+camera.lookAt(LOOK_AT);
 
 // ---------- walls (rift/circuit/glass.js), and the space behind them (rift.js) ----------
 
@@ -157,12 +159,14 @@ const pipeline = new THREE.RenderPipeline(renderer);
 const scenePass = pass(scene, camera, { samples: 4 });
 const focus = uniform(camera.position.length());
 // Depth of field, made cheap: the same circle of confusion as three's DOF (fully out of focus 3 cm
-// from the focal plane), but instead of its 64-tap bokeh, two blurred copies at half resolution
-// (light and stronger) mixed by it. The camera never moves and the focus stays on the
-// butterfly, so this is all the macro look needs, at a fraction of the cost (DOF was most of the GPU
-// time).
+// from the focal plane in the macro view), but instead of its 64-tap bokeh, two blurred copies at
+// half resolution (light and stronger) mixed by it. The focus stays on the butterfly, so this is all
+// the macro look needs, at a fraction of the cost (DOF was most of the GPU time). The same lens
+// farther back has a depth of field that grows with the square of the distance (setView).
+const DOF_MACRO = 0.03; // m
+const dofRange = uniform(DOF_MACRO);
 const colour = scenePass.getTextureNode();
-const coc = smoothstep(0, 0.03, scenePass.getViewZNode().negate().sub(focus).abs());
+const coc = smoothstep(0, dofRange, scenePass.getViewZNode().negate().sub(focus).abs());
 // Sized to match the old bokeh: a disc of ~8 px at bokeh 4, roughly a gaussian of 2 half-res texels.
 const soft = gaussianBlur(colour, null, 1, { resolutionScale: 0.5 });
 const blurred = gaussianBlur(colour, null, 2, { resolutionScale: 0.5 });
@@ -218,7 +222,7 @@ const { state } = flight;
 
 const ndc = new THREE.Vector2();
 const overButterfly = (e) => flight.touches(ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1));
-// Drag moves the sun, and a tap (no drag) touches the butterfly. The view is fixed.
+// Drag moves the sun, and a tap (no drag) touches the butterfly. The view changes only with VIEW (V).
 // Moves are measured from the last position, not movementX, which touch pointers may leave at 0.
 let down = null;
 renderer.domElement.addEventListener('pointerdown', (e) => {
@@ -237,12 +241,33 @@ addEventListener('pointermove', (e) => {
   [down.lastX, down.lastY] = [e.clientX, e.clientY];
   placeSun();
 });
+// Where a mouse cursor is, for the butterfly to notice it hovering over it (flight.js). Touch has no
+// hover: a finger is only there while it drags or taps.
+let pointer = null;
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = overButterfly(e) ? 'pointer' : '';
+  pointer = e.pointerType === 'mouse' ? new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1) : null;
 });
+renderer.domElement.addEventListener('pointerleave', () => (pointer = null));
 // The switches, read out in the corner like a camera's settings: a row (or its key) steps to the next
 // option, and the pips show where it is among them.
+// Two views from the same direction: the macro close-up, and 2.5 times as far back, where the
+// butterfly sits in a wider stretch of the wall (?view=wide, or V). The walls are built for what the
+// camera sees, so they are rebuilt on each change.
+const VIEWS = { macro: 1, wide: 2.5 };
+let view = 'macro';
+function setView(v) {
+  view = v;
+  camera.position.copy(LOOK_AT).lerp(MACRO_AT, VIEWS[v]);
+  camera.lookAt(LOOK_AT);
+  camera.updateMatrixWorld();
+  for (const w of Object.values(walls)) w.fit();
+  dofRange.value = DOF_MACRO * VIEWS[v] ** 2;
+  focus.value = camera.position.distanceTo(bf.group.position); // a cut, not a pull of focus
+}
+if (params.get('view') in VIEWS) setView(params.get('view'));
 const SWITCHES = [
+  { key: 'v', label: 'VIEW', options: Object.keys(VIEWS), get: () => view, set: setView },
   { key: 'w', label: 'WALL', options: WALLS, get: () => wallKind,
     set: (v) => { wallKind = v; showWall(); envAt.radius = -1; } }, // re-capture: the light from the wall has changed
   { key: 'e', label: 'FX', options: [null, ...MODES], get: () => overlay.mode, set: (v) => overlay.set(v) },
@@ -281,7 +306,7 @@ let realRadius = 0;
 await step('Compiling the shaders');
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 1 / 30) * timeScale;
-  flight.update(dt);
+  flight.update(dt, pointer);
 
   // The sun, and its shadow camera, follow the butterfly.
   sun.target.position.copy(bf.group.position);
