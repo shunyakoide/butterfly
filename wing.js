@@ -122,13 +122,17 @@ function inside(p, poly) {
   return hit;
 }
 
-// Surface height (meters, +z dorsal): a gentle camber plus ridges and valleys along the veins.
+// Surface height (meters, +z dorsal): a gentle camber plus ridges and valleys along the veins. The
+// broad ridges and valleys are kept low (est.: no butterfly measurements found): butterfly wings
+// look nearly flat, and the structural blue doubles every tilt, so 0.28 mm ones read as a
+// pleated fan. The veins themselves rise as narrow ridges in the normal map (reliefNormalMap).
+const PLEAT = 0.00007; // m
 function relief(p, wing, isInside) {
   const edge = isInside ? Math.min(...wing.pts.map((q) => q.distanceTo(p))) : 0;
   let z = 0.0016 * smoothstep(edge, 0, 0.013);
   for (const v of wing.veins) {
     const [d, along] = distToPolyline(p, v.pts);
-    z += v.pleat * 0.00028 * Math.exp(-((d / 0.0018) ** 2)) * (1 - 0.7 * along);
+    z += v.pleat * PLEAT * Math.exp(-((d / 0.0018) ** 2)) * (1 - 0.7 * along);
   }
   return z;
 }
@@ -164,9 +168,9 @@ export function wingGeometry(wing, over = null, shift = new THREE.Vector2()) {
 }
 
 // Fine relief as a tangent-space normal map: raised veins (tapering toward the margin) and
-// scale grain. `veinHeight` scales the veins: they read faintly through the dorsal scales and
+// scale grain (`grain`: the random tilt per texel). `veinHeight` scales the veins: they read faintly through the dorsal scales and
 // stand out more underneath.
-export function reliefNormalMap(wing, veinHeight) {
+export function reliefNormalMap(wing, veinHeight, grain = 0.06) {
   const S = TEX / BOX.size;
   const c = document.createElement('canvas');
   c.width = c.height = TEX;
@@ -196,7 +200,6 @@ export function reliefNormalMap(wing, veinHeight) {
   const k = 0.4 * veinHeight;
   for (let y = 0; y < TEX; y++) {
     for (let x = 0; x < TEX; x++) {
-      const grain = 0.06;
       const dx = (H(x + 1, y) - H(x - 1, y)) * k + (Math.random() - 0.5) * grain;
       const dy = (H(x, y - 1) - H(x, y + 1)) * k + (Math.random() - 0.5) * grain;
       // DataTexture rows start at v = 0 (the canvas bottom), unlike flipped canvas textures.

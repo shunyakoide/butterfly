@@ -27,8 +27,10 @@ export class Butterfly {
     this.upper = [0, 1].map(() => canvasTexture(THREE.SRGBColorSpace));
     this.rough = [0, 1].map(() => canvasTexture(THREE.NoColorSpace));
     this.under = [0, 1].map(() => canvasTexture(THREE.SRGBColorSpace));
-    // [upper, under] relief per wing: veins read faintly through the dorsal scales, more below.
-    const relief = [FORE, HIND].map((w) => [reliefNormalMap(w, 0.35), reliefNormalMap(w, 1)]);
+    // [upper, under] relief per wing: the veins stand up as narrow ridges (the black lines look raised
+    // close up), fainter through the dorsal scales than below; between them the scales lie smooth, so
+    // the dorsal grain is fine (est.: the wings look flat).
+    const relief = [FORE, HIND].map((w) => [reliefNormalMap(w, 0.35, 0.02), reliefNormalMap(w, 1)]);
 
     // Upper side: structural blue lobe (see morpho.js) over a low, white specular. Lit from behind,
     // the thin membrane passes the pigment colours: the underside's browns show through the upper

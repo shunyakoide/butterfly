@@ -337,7 +337,9 @@ export function buildFlight({ bf, camera, pose, sun }) {
     }
     // ?pose=open or ?pose=closed holds the wings still, for comparing against reference photos.
     if (pose) [state.restTarget, state.leanTarget] = pose === "open" ? [deg(4), deg(5)] : [CLOSED, 0];
-    state.restAngle = THREE.MathUtils.damp(state.restAngle, state.restTarget, 5, dt);
+    // Quick: a resting morpho closes its wings in about an eighth of a second and opens them as fast
+    // (est.); a slower ease read as a mechanical fold.
+    state.restAngle = THREE.MathUtils.damp(state.restAngle, state.restTarget, 15, dt);
     state.lean = THREE.MathUtils.damp(state.lean, state.leanTarget, 3, dt);
     const t = state.idleT += dt;
 

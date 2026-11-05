@@ -125,6 +125,9 @@ export function buildBody() {
   const tubeMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.55, sheen: 0.5, sheenColor: 0xffffff, sheenRoughness: 0.4 });
   // Hairs are thin and many: a soft sheen, not a glossy highlight each (that read as glitter).
   const hairMat = new THREE.MeshPhysicalMaterial({ roughness: 0.75, sheen: 0.3, sheenColor: 0xffffff, sheenRoughness: 0.5, specularIntensity: 0.3 });
+  // Antennae and proboscis: bare, dark and a little glossy. The white sheen of the scaled tubes made
+  // them read pale and striped (est.).
+  const darkTubeMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.45, specularIntensity: 0.5, sheen: 0.1, sheenColor: 0xffffff, sheenRoughness: 0.5 });
 
   // ---------- thorax: an egg-shaped box of flight muscle under a coat of long hair ----------
   const TR = new THREE.Vector3(0.0031, 0.0044, 0.0029); // semi-axes
@@ -144,12 +147,12 @@ export function buildBody() {
     if (u.lengthSq() > 1 || u.lengthSq() < 1e-4) return null;
     u.normalize();
     const p = u.clone().multiply(TR), n = u.clone().divide(TR).normalize();
-    // A dense pile combed back along the surface, lifting only a little off it (photos: the thorax
-    // reads as velvet, not as separate hairs).
+    // A dense pile combed back along the surface, lying close to it (photos: the thorax reads as
+    // velvet, not as separate hairs; longer or lifting more, it bristled like a hedgehog, est.).
     const back = new THREE.Vector3(0, -1, 0).addScaledVector(n, n.y);
-    const dir = back.normalize().addScaledVector(n, 0.45).addScaledVector(
-      new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5), 0.25);
-    const len = (n.z > -0.3 ? 0.0009 : 0.0006) * (0.6 + r() * 0.7);
+    const dir = back.normalize().addScaledVector(n, 0.2).addScaledVector(
+      new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5), 0.15);
+    const len = (n.z > -0.3 ? 0.0006 : 0.00045) * (0.6 + r() * 0.7);
     return { p, dir, len, width: 0.000025, color: thoraxColor(p, n) };
   }, hairMat));
   // Wing-root tufts: long hairs where the wings join, hiding the joint.
@@ -200,49 +203,54 @@ export function buildBody() {
     const u = new THREE.Vector3(r() * 2 - 1, r() * 2 - 1, r() * 2 - 1).normalize();
     if (Math.abs(u.x) > 0.45) return null; // the eyes cover the sides
     const p = HEAD.clone().addScaledVector(u, 0.0019);
-    // Combed forward over the head, as on the thorax, lifting a little at the front.
-    const dir = new THREE.Vector3(0, 1, 0).projectOnPlane(u).normalize().addScaledVector(u, 0.5)
-      .addScaledVector(new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5), 0.25);
+    // Combed forward over the head, as on the thorax, lying close (est.).
+    const dir = new THREE.Vector3(0, 1, 0).projectOnPlane(u).normalize().addScaledVector(u, 0.25)
+      .addScaledVector(new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5), 0.15);
     const pale = u.y > 0.5 && u.z < 0.2;
-    return { p, dir, len: 0.0006 * (0.6 + r() * 0.6), width: 0.00003, color: pale ? hsl(40, 25, 70) : hsl(24, 25, 10 + r() * 8) };
+    return { p, dir, len: 0.00045 * (0.6 + r() * 0.6), width: 0.00003, color: pale ? hsl(40, 25, 70) : hsl(24, 25, 10 + r() * 8) };
   }, hairMat));
 
-  // Compound eyes: glossy navy-black, faceted, each in a ring of pale scales.
-  const eyeMat = new THREE.MeshPhysicalMaterial({ color: 0x0a0f1e, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08, normalMap: ommatidiaNormals(), normalScale: new THREE.Vector2(0.6, 0.6) });
-  const ringMat = new THREE.MeshPhysicalMaterial({ color: 0x9c9282, roughness: 0.8, sheen: 0.3, sheenColor: 0xffffff });
+  // Compound eyes: glossy navy-black, faceted, each in a ring of pale scales. The facets are far
+  // below a pixel at any view here, so they only roughen the glaze a little: stronger, every facet
+  // caught a light of its own and the eye glittered like glass with lights inside (est.).
+  const eyeMat = new THREE.MeshPhysicalMaterial({ color: 0x0a0f1e, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08, normalMap: ommatidiaNormals(), normalScale: new THREE.Vector2(0.15, 0.15) });
+  const ringMat = new THREE.MeshPhysicalMaterial({ color: 0xd8d0c2, roughness: 0.8, sheen: 0.3, sheenColor: 0xffffff });
   for (const s of [-1, 1]) {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0015, 32, 20), eyeMat);
     eye.position.set(s * 0.0011, HEAD.y + 0.0003, HEAD.z + 0.0002);
     eye.rotation.z = s * Math.PI / 2; // facets laid out around the eye's own axis
     g.add(eye);
     // Hairy eyes, as in the helenor clade (Cassildé et al. 2010): short sparse setae between facets.
+    // Dark: paler ones caught the light as specks inside the eye (est.).
     g.add(hairs(400, () => {
       const n = new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize();
       if (n.x * s < 0) n.x = -n.x; // outer half only
-      return { p: n.clone().multiplyScalar(0.0015).add(eye.position), dir: n, len: 0.00018 * (0.6 + r() * 0.6), width: 0.000012, color: hsl(30, 15, 25 + r() * 20) };
+      return { p: n.clone().multiplyScalar(0.0015).add(eye.position), dir: n, len: 0.00015 * (0.6 + r() * 0.6), width: 0.000012, color: hsl(30, 15, 8 + r() * 6) };
     }, hairMat));
-    // A narrow band of scales round the eye's rim, ~60 µm (est., photos); thicker read as a white frame.
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.00133, 0.00006, 6, 40), ringMat);
+    // A band of white scales round the eye's rim, ~90 µm (est.): close up it reads clearly white.
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.00133, 0.00009, 6, 40), ringMat);
     ring.position.set(s * 0.00175, HEAD.y + 0.0003, HEAD.z + 0.0002);
     ring.rotation.y = Math.PI / 2;
     g.add(ring);
   }
 
-  // Labial palps: a pair pressed together in front of the face like a beak, jutting forward and
-  // turning up to about the top of the eyes (photos); red outside, white on the inner face.
+  // Labial palps: a pair pressed together in front of the face, rising close along the front of the
+  // eyes to about their top (photos; est. that they lie against the eyes rather than jut out); red
+  // outside, white on the inner face. The eyes' fronts are at y ≈ HEAD.y + 0.0016.
   for (const s of [-1, 1]) {
-    const pts = [[s * 0.00035, HEAD.y + 0.0008, HEAD.z - 0.0014], [s * 0.00045, HEAD.y + 0.0021, HEAD.z - 0.0009],
-      [s * 0.0004, HEAD.y + 0.0031, HEAD.z + 0.0001], [s * 0.0003, HEAD.y + 0.0035, HEAD.z + 0.0008]];
+    const pts = [[s * 0.00035, HEAD.y + 0.0009, HEAD.z - 0.0014], [s * 0.0004, HEAD.y + 0.0018, HEAD.z - 0.0008],
+      [s * 0.0004, HEAD.y + 0.0021, HEAD.z + 0.0002], [s * 0.0003, HEAD.y + 0.0020, HEAD.z + 0.0011]];
     const radius = (t) => 0.00034 * (1 - 0.55 * t);
     const color = (n) => (n.x * s > 0.1 ? hsl(355, 45, 42) : hsl(40, 18, 72));
     const geo = taperTube(pts, radius, (t, n) => color(n));
     g.add(new THREE.Mesh(geo, tubeMat));
     const curve = geo.userData.curve;
-    // Densely scaled: short scales all round the surface, lying forward along the palp.
+    // Densely scaled: short scales all round the surface, lying flat forward along the palp, so it
+    // reads as a smooth blade, not a brush (est.).
     g.add(hairs(420, () => {
       const t = r(), tan = curve.getTangentAt(t);
       const n = new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).projectOnPlane(tan).normalize();
-      return { p: curve.getPointAt(t).addScaledVector(n, radius(t)), dir: tan.clone().addScaledVector(n, 0.5), len: 0.0003 * (0.6 + r() * 0.6), width: 0.000025, color: color(n) };
+      return { p: curve.getPointAt(t).addScaledVector(n, radius(t)), dir: tan.clone().addScaledVector(n, 0.15), len: 0.0002 * (0.6 + r() * 0.6), width: 0.000025, color: color(n) };
     }, hairMat));
   }
 
@@ -252,7 +260,7 @@ export function buildBody() {
     const t = i / 60, a = t * Math.PI * 2 * 2.5, rad = 0.00075 * (1 - 0.7 * t);
     coil.push([0, HEAD.y + 0.0012 + Math.cos(a) * rad, HEAD.z - 0.0018 - Math.sin(a) * rad]);
   }
-  g.add(new THREE.Mesh(taperTube(coil, () => 0.00009, () => hsl(25, 30, 18), { seg: 120, radial: 6 }), tubeMat));
+  g.add(new THREE.Mesh(taperTube(coil, () => 0.00009, () => hsl(25, 30, 2.5), { seg: 120, radial: 6 }), darkTubeMat));
 
   // Antennae: slender and long, thickening gradually into a club; dark brown with faint pale
   // rings at each segment, a pinkish base and a paler tip.
@@ -272,13 +280,15 @@ export function buildBody() {
       const e = Math.max(0, (t - 0.93) / 0.07);
       return club * Math.sqrt(Math.max(0, 1 - e * e)) + 0.000005;
     };
+    // Near black: hsl() takes its lightness in linear terms, so the 8-9% these had shows as a mid
+    // brown on screen, and the antennae read pale (est.: they look black close up).
     const color = (t) => {
-      const ring = Math.pow(Math.abs(Math.sin(t * Math.PI * 40)), 12) * 0.06;
-      if (t < 0.06) return hsl(10, 30, 32);
-      if (t > 0.62) return hsl(24, 35, 9 + 9 * THREE.MathUtils.smoothstep(t, 0.75, 1)); // the club warms toward the tip
-      return hsl(22, 20, 8 + ring * 100);
+      const ring = Math.pow(Math.abs(Math.sin(t * Math.PI * 40)), 12) * 0.01;
+      if (t < 0.06) return hsl(10, 30, 6);
+      if (t > 0.62) return hsl(24, 35, 1.5 + 2 * THREE.MathUtils.smoothstep(t, 0.75, 1)); // the club warms toward the tip
+      return hsl(22, 20, 1.5 + ring * 100);
     };
-    pivot.add(new THREE.Mesh(taperTube(pts, radius, color, { seg: 160, radial: 8 }), tubeMat));
+    pivot.add(new THREE.Mesh(taperTube(pts, radius, color, { seg: 160, radial: 8 }), darkTubeMat));
     g.add(pivot);
     antennae.push(pivot);
   }
@@ -286,11 +296,12 @@ export function buildBody() {
 
   // ---------- legs ----------
   // Nymphalids walk on four legs.
-  // Silvery grey, paler toward the feet (side photo photo-1651940397966).
-  const legColor = (l) => () => hsl(30, 6, l);
+  // Silvery grey with a warm, tan cast, paler toward the feet (side photo photo-1651940397966; the
+  // warmth est.).
+  const legColor = (l) => () => hsl(24, 14, l);
   // The spines lost their per-hair colour (hsl 20,30,8) when they left the instanced mesh: folded in here.
   const spineMat = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0x1a120c).multiply(hsl(20, 30, 8)), roughness: 0.5 });
-  const jointMat = new THREE.MeshPhysicalMaterial({ color: hsl(30, 6, 54), roughness: 0.7 });
+  const jointMat = new THREE.MeshPhysicalMaterial({ color: hsl(24, 14, 54), roughness: 0.7 });
   const V = (a) => new THREE.Vector3(...a);
   // The walking legs bend (pose, below), so each segment moves with a bone: the coxa, femur, tibia
   // and tarsus of each leg. All the segments are one skinned mesh, the spines and claws another,
