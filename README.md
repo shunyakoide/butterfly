@@ -35,7 +35,7 @@ The camera does not move, apart from switching between two views.
 |---|---|
 | Hover over the butterfly | It opens its wings (mouse only) |
 | Tap the butterfly | It flies off |
-| Drag | Moves the sun (the butterfly turns to follow) |
+| Drag | Moves the sun (a basking butterfly turns to follow) |
 | VIEW at the bottom left, or the V key | View: macro / wide (2.5 times as far back) |
 | WALL at the bottom left, or the W key | Wall: columns / circuit / glass |
 | FX at the bottom left, or the E key | Redraws the screen: off / scan / dither |
